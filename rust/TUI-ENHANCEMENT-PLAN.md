@@ -1,4 +1,4 @@
-# TUI Enhancement Plan — Claw Code (`rusty-claude-cli`)
+# TUI Enhancement Plan - Anvil (`rusty-claude-cli`)
 
 ## Executive Summary
 
@@ -219,3 +219,4 @@ crates/rusty-claude-cli/src/
 ---
 
 *Generated: 2026-03-31 | Workspace: `rust/` | Branch: `dev/rust`*
+

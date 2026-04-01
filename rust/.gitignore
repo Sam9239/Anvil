@@ -1,3 +1,5 @@
 target/
 .omx/
+.anvil-agents/
+
 .clawd-agents/

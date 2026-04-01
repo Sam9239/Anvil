@@ -55,7 +55,7 @@ fn main() {
         eprintln!(
             "error: {error}
 
-Run `claw --help` for usage."
+Run `anvil --help` for usage."
         );
         std::process::exit(1);
     }
@@ -197,7 +197,7 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
                 index += 1;
             }
             "-p" => {
-                // Claw Code compat: -p "prompt" = one-shot prompt
+                // Anvil compat: -p "prompt" = one-shot prompt
                 let prompt = args[index + 1..].join(" ");
                 if prompt.trim().is_empty() {
                     return Err("-p requires a prompt string".to_string());
@@ -211,7 +211,7 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
                 });
             }
             "--print" => {
-                // Claw Code compat: --print makes output non-interactive
+                // Anvil compat: --print makes output non-interactive
                 output_format = CliOutputFormat::Text;
                 index += 1;
             }
@@ -1570,7 +1570,7 @@ impl LiveCli {
             return Err("generated commit message was empty".into());
         }
 
-        let path = write_temp_text_file("claw-commit-message.txt", &message)?;
+        let path = write_temp_text_file("anvil-commit-message.txt", &message)?;
         let output = Command::new("git")
             .args(["commit", "--file"])
             .arg(&path)
@@ -1601,7 +1601,7 @@ impl LiveCli {
             .ok_or_else(|| "failed to parse generated PR title/body".to_string())?;
 
         if command_exists("gh") {
-            let body_path = write_temp_text_file("claw-pr-body.md", &body)?;
+            let body_path = write_temp_text_file("anvil-pr-body.md", &body)?;
             let output = Command::new("gh")
                 .args(["pr", "create", "--title", &title, "--body-file"])
                 .arg(&body_path)
@@ -1632,7 +1632,7 @@ impl LiveCli {
             .ok_or_else(|| "failed to parse generated issue title/body".to_string())?;
 
         if command_exists("gh") {
-            let body_path = write_temp_text_file("claw-issue-body.md", &body)?;
+            let body_path = write_temp_text_file("anvil-issue-body.md", &body)?;
             let output = Command::new("gh")
                 .args(["issue", "create", "--title", &title, "--body-file"])
                 .arg(&body_path)
@@ -2206,7 +2206,7 @@ fn render_version_report() -> String {
     let git_sha = GIT_SHA.unwrap_or("unknown");
     let target = BUILD_TARGET.unwrap_or("unknown");
     format!(
-        "Claw Code\n  Version          {VERSION}\n  Git SHA          {git_sha}\n  Target           {target}\n  Build date       {DEFAULT_DATE}"
+        "Anvil\n  Version          {VERSION}\n  Git SHA          {git_sha}\n  Target           {target}\n  Build date       {DEFAULT_DATE}"
     )
 }
 
@@ -3130,38 +3130,38 @@ fn convert_messages(messages: &[ConversationMessage]) -> Vec<InputMessage> {
 }
 
 fn print_help_to(out: &mut impl Write) -> io::Result<()> {
-    writeln!(out, "claw v{VERSION}")?;
+    writeln!(out, "anvil v{VERSION}")?;
     writeln!(out)?;
     writeln!(out, "Usage:")?;
     writeln!(
         out,
-        "  claw [--model MODEL] [--allowedTools TOOL[,TOOL...]]"
+        "  anvil [--model MODEL] [--allowedTools TOOL[,TOOL...]]"
     )?;
     writeln!(out, "      Start the interactive REPL")?;
     writeln!(
         out,
-        "  claw [--model MODEL] [--output-format text|json] prompt TEXT"
+        "  anvil [--model MODEL] [--output-format text|json] prompt TEXT"
     )?;
     writeln!(out, "      Send one prompt and exit")?;
     writeln!(
         out,
-        "  claw [--model MODEL] [--output-format text|json] TEXT"
+        "  anvil [--model MODEL] [--output-format text|json] TEXT"
     )?;
     writeln!(out, "      Shorthand non-interactive prompt mode")?;
     writeln!(
         out,
-        "  claw --resume SESSION.json [/status] [/compact] [...]"
+        "  anvil --resume SESSION.json [/status] [/compact] [...]"
     )?;
     writeln!(
         out,
         "      Inspect or maintain a saved session without entering the REPL"
     )?;
-    writeln!(out, "  claw dump-manifests")?;
-    writeln!(out, "  claw bootstrap-plan")?;
-    writeln!(out, "  claw system-prompt [--cwd PATH] [--date YYYY-MM-DD]")?;
-    writeln!(out, "  claw login")?;
-    writeln!(out, "  claw logout")?;
-    writeln!(out, "  claw init")?;
+    writeln!(out, "  anvil dump-manifests")?;
+    writeln!(out, "  anvil bootstrap-plan")?;
+    writeln!(out, "  anvil system-prompt [--cwd PATH] [--date YYYY-MM-DD]")?;
+    writeln!(out, "  anvil login")?;
+    writeln!(out, "  anvil logout")?;
+    writeln!(out, "  anvil init")?;
     writeln!(out)?;
     writeln!(out, "Flags:")?;
     writeln!(
@@ -3199,21 +3199,21 @@ fn print_help_to(out: &mut impl Write) -> io::Result<()> {
         .join(", ");
     writeln!(out, "Resume-safe commands: {resume_commands}")?;
     writeln!(out, "Examples:")?;
-    writeln!(out, "  claw --model claude-opus \"summarize this repo\"")?;
+    writeln!(out, "  anvil --model claude-opus \"summarize this repo\"")?;
     writeln!(
         out,
-        "  claw --output-format json prompt \"explain src/main.rs\""
+        "  anvil --output-format json prompt \"explain src/main.rs\""
     )?;
     writeln!(
         out,
-        "  claw --allowedTools read,glob \"summarize Cargo.toml\""
+        "  anvil --allowedTools read,glob \"summarize Cargo.toml\""
     )?;
     writeln!(
         out,
-        "  claw --resume session.json /status /diff /export notes.txt"
+        "  anvil --resume session.json /status /diff /export notes.txt"
     )?;
-    writeln!(out, "  claw login")?;
-    writeln!(out, "  claw init")?;
+    writeln!(out, "  anvil login")?;
+    writeln!(out, "  anvil init")?;
     Ok(())
 }
 
@@ -3561,7 +3561,7 @@ mod tests {
         let mut help = Vec::new();
         print_help_to(&mut help).expect("help should render");
         let help = String::from_utf8(help).expect("help should be utf8");
-        assert!(help.contains("claw init"));
+        assert!(help.contains("anvil init"));
     }
 
     #[test]
@@ -3895,3 +3895,5 @@ mod tests {
         ));
     }
 }
+
+

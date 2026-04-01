@@ -488,7 +488,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("time should move forward")
             .as_nanos();
-        std::env::temp_dir().join(format!("clawd-native-{name}-{unique}"))
+        std::env::temp_dir().join(format!("anvil-native-{name}-{unique}"))
     }
 
     #[test]
@@ -548,3 +548,4 @@ mod tests {
         assert!(grep_output.content.unwrap_or_default().contains("hello"));
     }
 }
+

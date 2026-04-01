@@ -70,7 +70,9 @@ fn upstream_repo_candidates(primary_repo_root: &Path) -> Vec<PathBuf> {
     }
 
     for ancestor in primary_repo_root.ancestors().take(4) {
+        candidates.push(ancestor.join("Anvil"));
         candidates.push(ancestor.join("claw-code"));
+        candidates.push(ancestor.join("anvil"));
         candidates.push(ancestor.join("clawd-code"));
     }
 
@@ -359,3 +361,4 @@ mod tests {
         assert!(names.contains(&"BashTool"));
     }
 }
+

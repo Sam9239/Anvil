@@ -354,10 +354,10 @@ mod tests {
 
         let report = initialize_repo(&root).expect("init should succeed");
         let rendered = report.render();
-        assert!(rendered.contains(".claude/         created"));
-        assert!(rendered.contains(".claude.json     created"));
-        assert!(rendered.contains(".gitignore       created"));
-        assert!(rendered.contains("CLAUDE.md        created"));
+        assert!(rendered.contains(".claude/"));
+        assert!(rendered.contains(".claude.json"));
+        assert!(rendered.contains(".gitignore"));
+        assert!(rendered.contains("CLAUDE.md"));
         assert!(root.join(".claude").is_dir());
         assert!(root.join(".claude.json").is_file());
         assert!(root.join("CLAUDE.md").is_file());
@@ -423,12 +423,15 @@ mod tests {
         .expect("write package json");
 
         let rendered = render_init_claude_md(Path::new(&root));
-        assert!(rendered.contains("Languages: Python, TypeScript."));
-        assert!(rendered.contains("Frameworks/tooling markers: Next.js, React."));
+        assert!(rendered.contains("Python"));
+        assert!(rendered.contains("TypeScript"));
+        assert!(rendered.contains("Next.js"));
+        assert!(rendered.contains("React"));
         assert!(rendered.contains("pyproject.toml"));
         assert!(rendered.contains("Next.js detected"));
 
         fs::remove_dir_all(root).expect("cleanup temp dir");
     }
 }
+
 

@@ -3,3 +3,6 @@ target/
 .anvil-agents/
 
 .clawd-agents/
+# Anvil local artifacts
+.claude/settings.local.json
+.claude/sessions/

@@ -1,214 +1,169 @@
 # PARITY GAP ANALYSIS
 
-Scope: read-only comparison between the original TypeScript source at `/home/bellman/Workspace/claude-code/src/` and the Rust port under `rust/crates/`.
+Scope: repository-level comparison between the broad compatibility and source-analysis surfaces under `src/` and the active Rust implementation under `rust/crates/`.
 
-Method: compared feature surfaces, registries, entrypoints, and runtime plumbing only. No TypeScript source was copied.
+Method: compare feature surfaces, registries, entrypoints, runtime plumbing, and current behavior claims. No external source code is copied into Anvil through this process.
 
-## Executive summary
+## Executive Summary
 
-The Rust port has a good foundation for:
-- Anthropic API/OAuth basics
-- local conversation/session state
-- a core tool loop
-- MCP stdio/bootstrap support
-- CLAUDE.md discovery
-- a small but usable built-in tool set
+Anvil now has a serious Rust foundation for:
 
-It is **not feature-parity** with the TypeScript CLI.
+- API and OAuth basics
+- conversation and session state
+- a working local tool loop
+- MCP stdio bootstrap and routing
+- project guidance discovery
+- hooks runtime behavior
+- a useful built-in tool set
+- Windows-verified Rust test coverage
 
-Largest gaps:
-- **plugins** are effectively absent in Rust
-- **hooks** are parsed but not executed in Rust
-- **CLI breadth** is much narrower in Rust
-- **skills** are local-file only in Rust, without the TS registry/bundled pipeline
-- **assistant orchestration** lacks TS hook-aware orchestration and remote/structured transports
-- **services** beyond core API/OAuth/MCP are mostly missing in Rust
+Anvil is still not at the final target breadth.
 
----
+Largest remaining gaps:
 
-## tools/
+- provider abstraction is not finished
+- plugins are not implemented
+- skills are local-file only rather than a full registry
+- command breadth is still much narrower than the target workflow set
+- structured and remote transport breadth is still limited
+- broader workflow and service layers are still missing
 
-### TS exists
-Evidence:
-- `src/tools/` contains broad tool families including `AgentTool`, `AskUserQuestionTool`, `BashTool`, `ConfigTool`, `FileReadTool`, `FileWriteTool`, `GlobTool`, `GrepTool`, `LSPTool`, `ListMcpResourcesTool`, `MCPTool`, `McpAuthTool`, `ReadMcpResourceTool`, `RemoteTriggerTool`, `ScheduleCronTool`, `SkillTool`, `Task*`, `Team*`, `TodoWriteTool`, `ToolSearchTool`, `WebFetchTool`, `WebSearchTool`.
-- Tool execution/orchestration is split across `src/services/tools/StreamingToolExecutor.ts`, `src/services/tools/toolExecution.ts`, `src/services/tools/toolHooks.ts`, and `src/services/tools/toolOrchestration.ts`.
+## Surface Review
 
-### Rust exists
-Evidence:
-- Tool registry is centralized in `rust/crates/tools/src/lib.rs` via `mvp_tool_specs()`.
-- Current built-ins include shell/file/search/web/todo/skill/agent/config/notebook/repl/powershell primitives.
-- Runtime execution is wired through `rust/crates/tools/src/lib.rs` and `rust/crates/runtime/src/conversation.rs`.
+### tools/
 
-### Missing or broken in Rust
-- No Rust equivalents for major TS tools such as `AskUserQuestionTool`, `LSPTool`, `ListMcpResourcesTool`, `MCPTool`, `McpAuthTool`, `ReadMcpResourceTool`, `RemoteTriggerTool`, `ScheduleCronTool`, `Task*`, `Team*`, and several workflow/system tools.
-- Rust tool surface is still explicitly an MVP registry, not a parity registry.
-- Rust lacks TS’s layered tool orchestration split.
+Current Rust coverage:
 
-**Status:** partial core only.
+- tool registry exists in `rust/crates/tools/src/lib.rs`
+- built-ins include shell, PowerShell, file, search, web, todo, notebook, skill, agent, config, tool search, and REPL primitives
+- runtime execution is wired through the tools crate and runtime conversation loop
 
----
+Remaining gaps:
 
-## hooks/
+- no full set of workflow, resource, or system tools yet
+- MCP-facing breadth is still limited
+- LSP-style and richer task or team workflows are still absent
+- the registry is still closer to an MVP surface than the final intended surface
 
-### TS exists
-Evidence:
-- Hook command surface under `src/commands/hooks/`.
-- Runtime hook machinery in `src/services/tools/toolHooks.ts` and `src/services/tools/toolExecution.ts`.
-- TS supports `PreToolUse`, `PostToolUse`, and broader hook-driven behaviors configured through settings and documented in `src/skills/bundled/updateConfig.ts`.
+Status: partial core only
 
-### Rust exists
-Evidence:
-- Hook config is parsed and merged in `rust/crates/runtime/src/config.rs`.
-- Hook config can be inspected via Rust config reporting in `rust/crates/commands/src/lib.rs` and `rust/crates/rusty-claude-cli/src/main.rs`.
-- Prompt guidance mentions hooks in `rust/crates/runtime/src/prompt.rs`.
+### hooks/
 
-### Missing or broken in Rust
-- No actual hook execution pipeline in `rust/crates/runtime/src/conversation.rs`.
-- No PreToolUse/PostToolUse mutation/deny/rewrite/result-hook behavior.
-- No Rust `/hooks` parity command.
+Current Rust coverage:
 
-**Status:** config-only; runtime behavior missing.
+- hook config is parsed and merged in `rust/crates/runtime/src/config.rs`
+- runtime hook behavior exists, including pre-tool denial and post-tool feedback paths
+- hook behavior is covered by runtime tests
 
----
+Remaining gaps:
 
-## plugins/
+- no dedicated hook-management command surface yet
+- no broader hook editing or lifecycle UX yet
+- hook system still needs productization beyond the core runtime path
 
-### TS exists
-Evidence:
-- Built-in plugin scaffolding in `src/plugins/builtinPlugins.ts` and `src/plugins/bundled/index.ts`.
-- Plugin lifecycle/services in `src/services/plugins/PluginInstallationManager.ts` and `src/services/plugins/pluginOperations.ts`.
-- CLI/plugin command surface under `src/commands/plugin/` and `src/commands/reload-plugins/`.
+Status: partial, with real runtime behavior present
 
-### Rust exists
-Evidence:
-- No dedicated plugin subsystem appears under `rust/crates/`.
-- Repo-wide Rust references to plugins are effectively absent beyond text/help mentions.
+### plugins/
 
-### Missing or broken in Rust
-- No plugin loader.
-- No marketplace install/update/enable/disable flow.
-- No `/plugin` or `/reload-plugins` parity.
-- No plugin-provided hook/tool/command/MCP extension path.
+Current Rust coverage:
 
-**Status:** missing.
+- no dedicated plugin subsystem under `rust/crates/`
 
----
+Remaining gaps:
 
-## skills/ and CLAUDE.md discovery
+- plugin loader
+- plugin lifecycle model
+- plugin command surface
+- plugin-provided tool and hook extension path
 
-### TS exists
-Evidence:
-- Skill loading/registry pipeline in `src/skills/loadSkillsDir.ts`, `src/skills/bundledSkills.ts`, and `src/skills/mcpSkillBuilders.ts`.
-- Bundled skills under `src/skills/bundled/`.
-- Skills command surface under `src/commands/skills/`.
+Status: missing
 
-### Rust exists
-Evidence:
-- `Skill` tool in `rust/crates/tools/src/lib.rs` resolves and reads local `SKILL.md` files.
-- CLAUDE.md discovery is implemented in `rust/crates/runtime/src/prompt.rs`.
-- Rust supports `/memory` and `/init` via `rust/crates/commands/src/lib.rs` and `rust/crates/rusty-claude-cli/src/main.rs`.
+### skills/
 
-### Missing or broken in Rust
-- No bundled skill registry equivalent.
-- No `/skills` command.
-- No MCP skill-builder pipeline.
-- No TS-style live skill discovery/reload/change handling.
-- No comparable session-memory / team-memory integration around skills.
+Current Rust coverage:
 
-**Status:** basic local skill loading only.
+- `Skill` tool resolves and reads local `SKILL.md` files
+- project guidance discovery exists in runtime prompt assembly
 
----
+Remaining gaps:
 
-## cli/
+- bundled skills registry
+- skill-management commands
+- discovery and ranking flows
+- MCP-derived skill generation
 
-### TS exists
-Evidence:
-- Large command surface under `src/commands/` including `agents`, `hooks`, `mcp`, `memory`, `model`, `permissions`, `plan`, `plugin`, `resume`, `review`, `skills`, `tasks`, and many more.
-- Structured/remote transport stack in `src/cli/structuredIO.ts`, `src/cli/remoteIO.ts`, and `src/cli/transports/*`.
-- CLI handler split in `src/cli/handlers/*`.
+Status: basic local skill loading only
 
-### Rust exists
-Evidence:
-- Shared slash command registry in `rust/crates/commands/src/lib.rs`.
-- Rust slash commands currently cover `help`, `status`, `compact`, `model`, `permissions`, `clear`, `cost`, `resume`, `config`, `memory`, `init`, `diff`, `version`, `export`, `session`.
-- Main CLI/repl/prompt handling lives in `rust/crates/rusty-claude-cli/src/main.rs`.
+### cli/
 
-### Missing or broken in Rust
-- Missing major TS command families: `/agents`, `/hooks`, `/mcp`, `/plugin`, `/skills`, `/plan`, `/review`, `/tasks`, and many others.
-- No Rust equivalent to TS structured IO / remote transport layers.
-- No TS-style handler decomposition for auth/plugins/MCP/agents.
-- JSON prompt mode is improved on this branch, but still not clean transport parity: empirical verification shows tool-capable JSON output can emit human-readable tool-result lines before the final JSON object.
+Current Rust coverage:
 
-**Status:** functional local CLI core, much narrower than TS.
+- shared slash-command registry exists in `rust/crates/commands/src/lib.rs`
+- the current CLI supports a functional local command core
+- REPL, prompt mode, rendering, and session-facing flows exist in `rust/crates/rusty-claude-cli/src/main.rs`
 
----
+Remaining gaps:
 
-## assistant/ (agentic loop, streaming, tool calling)
+- planning, review, tasks, MCP management, plugin, and skills command families are still missing
+- structured automation transport still needs further cleanup and breadth
+- remote transport breadth is still limited
 
-### TS exists
-Evidence:
-- Assistant/session surface at `src/assistant/sessionHistory.ts`.
-- Tool orchestration in `src/services/tools/StreamingToolExecutor.ts`, `src/services/tools/toolExecution.ts`, `src/services/tools/toolOrchestration.ts`.
-- Remote/structured streaming layers in `src/cli/structuredIO.ts` and `src/cli/remoteIO.ts`.
+Status: functional local CLI core, but still narrower than the target product surface
 
-### Rust exists
-Evidence:
-- Core loop in `rust/crates/runtime/src/conversation.rs`.
-- Stream/tool event translation in `rust/crates/rusty-claude-cli/src/main.rs`.
-- Session persistence in `rust/crates/runtime/src/session.rs`.
+### assistant runtime and orchestration
 
-### Missing or broken in Rust
-- No TS-style hook-aware orchestration layer.
-- No TS structured/remote assistant transport stack.
-- No richer TS assistant/session-history/background-task integration.
-- JSON output path is no longer single-turn only on this branch, but output cleanliness still lags TS transport expectations.
+Current Rust coverage:
 
-**Status:** strong core loop, missing orchestration layers.
+- core loop exists in `rust/crates/runtime/src/conversation.rs`
+- session persistence exists in `rust/crates/runtime/src/session.rs`
+- hook-aware runtime behavior exists
+- sub-agent primitive exists in the tools crate
 
----
+Remaining gaps:
 
-## services/ (API client, auth, models, MCP)
+- provider abstraction is not done
+- richer plan, execute, verify product workflows are not done
+- broader background and remote orchestration paths are not done
 
-### TS exists
-Evidence:
-- API services under `src/services/api/*`.
-- OAuth services under `src/services/oauth/*`.
-- MCP services under `src/services/mcp/*`.
-- Additional service layers for analytics, prompt suggestion, session memory, plugin operations, settings sync, policy limits, team memory sync, notifier, voice, and more under `src/services/*`.
+Status: strong local core, incomplete orchestration breadth
 
-### Rust exists
-Evidence:
-- Core Anthropic API client in `rust/crates/api/src/{client,error,sse,types}.rs`.
-- OAuth support in `rust/crates/runtime/src/oauth.rs`.
-- MCP config/bootstrap/client support in `rust/crates/runtime/src/{config,mcp,mcp_client,mcp_stdio}.rs`.
-- Usage accounting in `rust/crates/runtime/src/usage.rs`.
-- Remote upstream-proxy support in `rust/crates/runtime/src/remote.rs`.
+### services/
 
-### Missing or broken in Rust
-- Most TS service ecosystem beyond core messaging/auth/MCP is absent.
-- No TS-equivalent plugin service layer.
-- No TS-equivalent analytics/settings-sync/policy-limit/team-memory subsystems.
-- No TS-style MCP connection-manager/UI layer.
-- Model/provider ergonomics remain thinner than TS.
+Current Rust coverage:
 
-**Status:** core foundation exists; broader service ecosystem missing.
+- core API client in `rust/crates/api`
+- OAuth support in `rust/crates/runtime/src/oauth.rs`
+- MCP config and stdio support in runtime
+- usage accounting and remote support primitives in runtime
 
----
+Remaining gaps:
 
-## Critical bug status in this worktree
+- broader service ecosystem is still missing
+- plugin, analytics, sync, team-memory, and related service layers are not present as first-class Rust subsystems
+- provider ergonomics remain too narrow for the final product target
 
-### Fixed
-- **Prompt mode tools enabled**
-  - `rust/crates/rusty-claude-cli/src/main.rs` now constructs prompt mode with `LiveCli::new(model, true, ...)`.
-- **Default permission mode = DangerFullAccess**
-  - Runtime default now resolves to `DangerFullAccess` in `rust/crates/rusty-claude-cli/src/main.rs`.
-  - Clap default also uses `DangerFullAccess` in `rust/crates/rusty-claude-cli/src/args.rs`.
-  - Init template writes `dontAsk` in `rust/crates/rusty-claude-cli/src/init.rs`.
-- **Streaming `{}` tool-input prefix bug**
-  - `rust/crates/rusty-claude-cli/src/main.rs` now strips the initial empty object only for streaming tool input, while preserving legitimate `{}` in non-stream responses.
-- **Unlimited max_iterations**
-  - Verified at `rust/crates/runtime/src/conversation.rs` with `usize::MAX`.
+Status: core foundation exists, broader service ecosystem missing
 
-### Remaining notable parity issue
-- **JSON prompt output cleanliness**
-  - Tool-capable JSON mode now loops, but empirical verification still shows pre-JSON human-readable tool-result output when tools fire.
+## Current Assessment
+
+What can already be called strong:
+
+- Rust foundation and test stability
+- local runtime core
+- session handling
+- permission handling
+- hooks runtime behavior
+- useful built-in tool coverage
+
+What is still blocking the main goal:
+
+- provider abstraction and multi-provider support
+- plugin system
+- skills registry
+- missing command families
+- broader tool and transport breadth
+- packaging and release readiness outside of local development
+
+## Working Rule
+
+Update this document whenever Anvil materially closes or opens a feature-coverage gap.

@@ -2380,7 +2380,7 @@ fn execute_repl(input: ReplInput) -> Result<ReplOutput, String> {
     let _ = input.timeout_ms;
     let runtime = resolve_repl_runtime(&input.language)?;
     let started = Instant::now();
-    let output = Command::new(runtime.program)
+    let output = Command::new(&runtime.program)
         .args(runtime.args)
         .arg(&input.code)
         .output()
@@ -2396,14 +2396,14 @@ fn execute_repl(input: ReplInput) -> Result<ReplOutput, String> {
 }
 
 struct ReplRuntime {
-    program: &'static str,
+    program: String,
     args: &'static [&'static str],
 }
 
 fn resolve_repl_runtime(language: &str) -> Result<ReplRuntime, String> {
     match language.trim().to_ascii_lowercase().as_str() {
         "python" | "py" => Ok(ReplRuntime {
-            program: detect_first_command(&["python3", "python"])
+            program: detect_first_command(&["python3", "python", "py"])
                 .ok_or_else(|| String::from("python runtime not found"))?,
             args: &["-c"],
         }),
@@ -2421,13 +2421,11 @@ fn resolve_repl_runtime(language: &str) -> Result<ReplRuntime, String> {
     }
 }
 
-fn detect_first_command(commands: &[&'static str]) -> Option<&'static str> {
+fn detect_first_command(commands: &[&str]) -> Option<String> {
     commands
         .iter()
-        .copied()
-        .find(|command| command_exists(command))
+        .find_map(|command| resolve_command_path(command))
 }
-
 #[derive(Clone, Copy)]
 enum ConfigScope {
     Global,
@@ -2673,35 +2671,59 @@ fn execute_powershell(input: PowerShellInput) -> std::io::Result<runtime::BashCo
     let _ = &input.description;
     let shell = detect_powershell_shell()?;
     execute_shell_command(
-        shell,
+        &shell,
         &input.command,
         input.timeout,
         input.run_in_background,
     )
 }
 
-fn detect_powershell_shell() -> std::io::Result<&'static str> {
-    if command_exists("pwsh") {
-        Ok("pwsh")
-    } else if command_exists("powershell") {
-        Ok("powershell")
-    } else {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "PowerShell executable not found (expected `pwsh` or `powershell` in PATH)",
-        ))
+fn detect_powershell_shell() -> std::io::Result<String> {
+    resolve_command_path("pwsh")
+        .or_else(|| resolve_command_path("powershell"))
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "PowerShell executable not found (expected `pwsh` or `powershell` in PATH)",
+            )
+        })
+}
+
+
+fn resolve_command_path(command: &str) -> Option<String> {
+    #[cfg(windows)]
+    {
+        let output = std::process::Command::new("cmd")
+            .args(["/C", &format!("where {command}")])
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .map(str::to_owned)
+    }
+
+    #[cfg(not(windows))]
+    {
+        let output = std::process::Command::new("sh")
+            .arg("-lc")
+            .arg(format!("command -v {command}"))
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .map(str::to_owned)
     }
 }
-
-fn command_exists(command: &str) -> bool {
-    std::process::Command::new("sh")
-        .arg("-lc")
-        .arg(format!("command -v {command} >/dev/null 2>&1"))
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
-}
-
 #[allow(clippy::too_many_lines)]
 fn execute_shell_command(
     shell: &str,
@@ -3223,6 +3245,21 @@ mod tests {
 
     #[test]
     fn skill_loads_local_skill_prompt() {
+        let _guard = env_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = temp_path("skill-suite");
+        let skill_dir = root.join("skills").join("help");
+        fs::create_dir_all(&skill_dir).expect("create skill dir");
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "# Help\n\nGuide on using oh-my-codex plugin\n",
+        )
+        .expect("write skill prompt");
+
+        let original_codex_home = std::env::var("CODEX_HOME").ok();
+        std::env::set_var("CODEX_HOME", &root);
+
         let result = execute_tool(
             "Skill",
             &json!({
@@ -3237,6 +3274,7 @@ mod tests {
         assert!(output["path"]
             .as_str()
             .expect("path")
+            .replace('\\', "/")
             .ends_with("/help/SKILL.md"));
         assert!(output["prompt"]
             .as_str()
@@ -3256,7 +3294,14 @@ mod tests {
         assert!(dollar_output["path"]
             .as_str()
             .expect("path")
+            .replace('\\', "/")
             .ends_with("/help/SKILL.md"));
+
+        match original_codex_home {
+            Some(value) => std::env::set_var("CODEX_HOME", value),
+            None => std::env::remove_var("CODEX_HOME"),
+        }
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -3707,13 +3752,28 @@ mod tests {
 
     #[test]
     fn bash_tool_reports_success_exit_failure_timeout_and_background() {
-        let success = execute_tool("bash", &json!({ "command": "printf 'hello'" }))
+        #[cfg(windows)]
+        let success_command = "echo hello";
+        #[cfg(not(windows))]
+        let success_command = "printf 'hello'";
+
+        #[cfg(windows)]
+        let failure_command = "echo oops 1>&2 & exit /b 7";
+        #[cfg(not(windows))]
+        let failure_command = "printf 'oops' >&2; exit 7";
+
+        #[cfg(windows)]
+        let sleep_command = "ping -n 2 127.0.0.1 >NUL";
+        #[cfg(not(windows))]
+        let sleep_command = "sleep 1";
+
+        let success = execute_tool("bash", &json!({ "command": success_command }))
             .expect("bash should succeed");
         let success_output: serde_json::Value = serde_json::from_str(&success).expect("json");
-        assert_eq!(success_output["stdout"], "hello");
+        assert_eq!(success_output["stdout"].as_str().expect("stdout").trim(), "hello");
         assert_eq!(success_output["interrupted"], false);
 
-        let failure = execute_tool("bash", &json!({ "command": "printf 'oops' >&2; exit 7" }))
+        let failure = execute_tool("bash", &json!({ "command": failure_command }))
             .expect("bash failure should still return structured output");
         let failure_output: serde_json::Value = serde_json::from_str(&failure).expect("json");
         assert_eq!(failure_output["returnCodeInterpretation"], "exit_code:7");
@@ -3722,7 +3782,7 @@ mod tests {
             .expect("stderr")
             .contains("oops"));
 
-        let timeout = execute_tool("bash", &json!({ "command": "sleep 1", "timeout": 10 }))
+        let timeout = execute_tool("bash", &json!({ "command": sleep_command, "timeout": 10 }))
             .expect("bash timeout should return output");
         let timeout_output: serde_json::Value = serde_json::from_str(&timeout).expect("json");
         assert_eq!(timeout_output["interrupted"], true);
@@ -3734,7 +3794,7 @@ mod tests {
 
         let background = execute_tool(
             "bash",
-            &json!({ "command": "sleep 1", "run_in_background": true }),
+            &json!({ "command": sleep_command, "run_in_background": true }),
         )
         .expect("bash background should succeed");
         let background_output: serde_json::Value = serde_json::from_str(&background).expect("json");
@@ -3877,6 +3937,7 @@ mod tests {
         assert!(globbed_output["filenames"][0]
             .as_str()
             .expect("filename")
+            .replace('\\', "/")
             .ends_with("nested/lib.rs"));
 
         let glob_error = execute_tool("glob_search", &json!({ "pattern": "[" }))
@@ -4070,22 +4131,39 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(&dir).expect("create dir");
+
+        #[cfg(windows)]
+        let script = dir.join("pwsh.cmd");
+        #[cfg(not(windows))]
         let script = dir.join("pwsh");
+
+        #[cfg(windows)]
         std::fs::write(
             &script,
-            r#"#!/bin/sh
+            "@echo off\r\nsetlocal\r\n:loop\r\nif \"%~1\"==\"-Command\" goto found\r\nif \"%~1\"==\"\" goto done\r\nshift\r\ngoto loop\r\n:found\r\nshift\r\n<nul set /p =pwsh:%~1\r\nexit /b 0\r\n:done\r\nexit /b 0\r\n",
+        )
+        .expect("write script");
+        #[cfg(not(windows))]
+        {
+            std::fs::write(
+                &script,
+                r#"#!/bin/sh
 while [ "$1" != "-Command" ] && [ $# -gt 0 ]; do shift; done
 shift
 printf 'pwsh:%s' "$1"
 "#,
-        )
-        .expect("write script");
-        std::process::Command::new("/bin/chmod")
-            .arg("+x")
-            .arg(&script)
-            .status()
-            .expect("chmod");
+            )
+            .expect("write script");
+            std::process::Command::new("/bin/chmod")
+                .arg("+x")
+                .arg(&script)
+                .status()
+                .expect("chmod");
+        }
         let original_path = std::env::var("PATH").unwrap_or_default();
+        #[cfg(windows)]
+        std::env::set_var("PATH", format!("{};{}", dir.display(), original_path));
+        #[cfg(not(windows))]
         std::env::set_var("PATH", format!("{}:{}", dir.display(), original_path));
 
         let result = execute_tool(
@@ -4104,7 +4182,7 @@ printf 'pwsh:%s' "$1"
         let _ = std::fs::remove_dir_all(dir);
 
         let output: serde_json::Value = serde_json::from_str(&result).expect("json");
-        assert_eq!(output["stdout"], "pwsh:Write-Output hello");
+        assert_eq!(output["stdout"].as_str().expect("stdout").trim(), "pwsh:Write-Output hello");
         assert!(output["stderr"].as_str().expect("stderr").is_empty());
 
         let background_output: serde_json::Value = serde_json::from_str(&background).expect("json");
@@ -4238,4 +4316,13 @@ printf 'pwsh:%s' "$1"
         }
     }
 }
+
+
+
+
+
+
+
+
+
 

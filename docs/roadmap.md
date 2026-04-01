@@ -1,132 +1,148 @@
 # Anvil Roadmap
 
-## Phase 0: Brand and Repo Foundation
+## Release Objective
 
-Goal: make Anvil a standalone private-ready product base.
+Ship Anvil as a stable, terminal-first coding agent CLI with a strong local runtime, multi-provider capability, broad workflow tooling, and extension surfaces that support real daily engineering work.
 
-Deliverables:
+## Current Phase Snapshot
 
-- standalone local Git repo
-- Anvil branding in top-level docs
-- private GitHub repo as future `origin`
-- old `claw-code` clone retained as upstream sync source
-- architecture and roadmap docs committed
+As of 2026-04-01:
 
-Exit criteria:
+- Phase 0: complete
+- Phase 1: complete
+- Phase 2: next priority
+- Phase 3: required before ship
+- Phase 4: required before ship
+- Phase 5: required before ship
+- Phase 6: follow-on growth after the first strong ship target
 
-- repo identity is Anvil, not claw-code
-- roadmap and architecture are documented
-- upstream sync strategy is clear
+## Phase 0: Product Identity And Repo Foundation
 
-## Phase 1: Runtime Core Hardening
+Status: complete
 
-Goal: make the Rust runtime stable enough for daily local use.
+Delivered:
 
-Deliverables:
+- standalone Anvil repository
+- Anvil branding at the product level
+- private GitHub origin
+- clear separation between shipping implementation and coverage surfaces
+- initial architecture and roadmap docs
 
-- polished conversation loop
-- predictable tool execution path
-- clean permission model
-- better session resume/export
-- compaction and usage tracking made trustworthy
-- structured output cleaned up for automation
+Exit criteria met:
 
-Exit criteria:
+- Anvil has its own repo identity
+- product docs are under Anvil branding
+- the repo can move independently
 
-- one-shot and REPL modes are reliable
-- tool-capable JSON mode is clean enough for scripting
-- session restore and usage accounting are dependable
+## Phase 1: Runtime Hardening And Test Stability
 
-## Phase 2: Claude-Like Core Parity
+Status: complete
 
-Goal: close the highest-value capability gaps from the local Claude analysis.
+Delivered:
 
-Priority targets:
+- Rust CLI rebrand to `anvil`
+- green Rust workspace tests
+- Windows-focused shell, PowerShell, OAuth, MCP stdio, prompt, and tool test stabilization
+- improved local verification confidence for the current engine
 
-1. commands
-2. tools
-3. CLI/headless transports
-4. skills
-5. plugins
+Exit criteria met:
 
-Concrete deliverables:
+- the Rust workspace is stable enough to keep building on
+- local core behavior is test-backed rather than speculative
 
-- `/review`, `/plan`, `/tasks`, `/mcp`, `/plugins`, `/skills`
-- richer tool registry and execution orchestration
-- hook execution pipeline
-- better headless and structured transport behavior
-- local and bundled skill loading
+## Phase 2: Provider Abstraction
 
-Exit criteria:
+Status: next priority
 
-- Anvil feels like a serious coding-agent CLI, not just a model wrapper
-- the missing features in `PARITY.md` are reduced in the highest-impact areas
+Required deliverables:
 
-## Phase 3: Provider Abstraction
-
-Goal: separate the Anvil engine from any one model vendor.
-
-Deliverables:
-
-- internal provider trait/interface
-- Anthropic adapter
-- OpenAI-compatible adapter
-- OpenAI Responses adapter
-- Gemini adapter
-- config and CLI selection for provider/model
+- introduce a provider interface owned by Anvil
+- move provider-specific behavior out of runtime glue where necessary
+- keep current Anthropic support working behind the provider interface
+- add an OpenAI-compatible adapter
+- define the path for Gemini support and additional adapters
+- add provider and model selection to configuration and CLI flows
 
 Exit criteria:
 
-- switching providers does not require changing the core runtime
-- usage, streaming, and tool calls are normalized across adapters
+- the runtime no longer assumes one provider model
+- providers can be added without rewriting the engine core
+- usage and tool-call behavior are normalized across adapters
 
-## Phase 4: Extensions and Workflows
+## Phase 3: Command And Tool Coverage
 
-Goal: make Anvil extensible and workflow-aware.
+Status: required before ship
 
-Deliverables:
+Required deliverables:
 
-- skill registry
-- plugin registry
-- project and user skill directories
-- plugin command and tool injection
-- MCP-derived skills and tool discovery
-
-Exit criteria:
-
-- new capabilities can be added without patching the engine core
-- project-specific workflows become first-class
-
-## Phase 5: Agent Orchestration
-
-Goal: support larger coding jobs and multi-step execution.
-
-Deliverables:
-
-- planner/executor/verifier loops
-- sub-agent spawning
-- background tasks
-- better task views and summaries
-- optional remote execution hooks
+- add plan, review, tasks, MCP-management, skills, and plugin commands
+- expand the tool registry beyond the current local MVP surface
+- improve structured output and automation-oriented CLI behavior
+- strengthen workflow tools for project operations and agent control
+- close the highest-value coverage gaps tracked in `PARITY.md`
 
 Exit criteria:
 
-- Anvil can reliably handle long-running coding tasks
-- planning and verification become built-in product features
+- Anvil supports the expected day-to-day coding workflows from the CLI
+- the command surface feels complete rather than foundational
+- must-have tool families are present and stable
 
-## Phase 6: Specialization
+## Phase 4: Skills, Plugins, And Extension Surfaces
 
-Goal: tailor Anvil to your real workflows.
+Status: required before ship
 
-Potential specialization tracks:
+Required deliverables:
 
-- GitHub-heavy coding automation
-- data and Power BI workflows
-- review and audit helpers
-- notebook and spreadsheet workflows
-- Windows and PowerShell-first tool ergonomics
+- build a bundled skills registry
+- support project and user skills cleanly
+- implement a plugin loader and lifecycle model
+- support plugin-provided tools, commands, or hooks where appropriate
+- define extension boundaries and safety rules
 
 Exit criteria:
 
-- Anvil is not just Claude-like
-- it is better aligned with your day-to-day work than generic agent CLIs
+- Anvil can grow without patching the core crates for every new workflow
+- skills and plugins are first-class product concepts
+
+## Phase 5: Packaging, QA, And Release Readiness
+
+Status: required before ship
+
+Required deliverables:
+
+- release builds for supported platforms
+- install and upgrade workflow
+- CI for format, lint, and test gates
+- smoke tests for prompt, REPL, session, tool, and provider flows
+- release checklist and operator docs
+- packaging and distribution decisions finalized
+
+Exit criteria:
+
+- a new user can install Anvil and run it successfully
+- release quality is enforced by automation, not memory
+
+## Phase 6: Expanded Product Breadth
+
+Status: follow-on after the first strong ship target
+
+Potential deliverables:
+
+- richer task orchestration and background execution
+- more advanced remote or structured transport layers
+- broader service ecosystem
+- domain-specific workflow packs
+- enhanced UX polish beyond the first shipping requirement
+
+Exit criteria:
+
+- Anvil moves from strong CLI foundation to broader product breadth
+
+## Roadmap Rules
+
+These rules apply every time the roadmap changes:
+
+- a phase is not complete until verification is green
+- a phase is not complete until the relevant docs are updated
+- README status must reflect the latest major milestone
+- `PARITY.md` must be updated when coverage claims change materially

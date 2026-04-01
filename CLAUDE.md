@@ -1,36 +1,33 @@
 # CLAUDE.md
 
-This repository is now treated as the early Anvil codebase.
+This repository is the Anvil codebase.
 
 ## Product intent
 
-Anvil is a terminal-first coding-agent platform with Claude-like capabilities, but the runtime should remain provider-agnostic.
-
-The engine is ours.
-The model provider is pluggable.
+Anvil is a terminal-first coding agent platform. The product engine belongs to Anvil, and model vendors must integrate through adapters instead of being wired directly into the core runtime.
 
 ## Detected stack
 
 - Languages: Rust and Python
 - Active product core: Rust
-- Compatibility and parity surface: Python
+- Compatibility and coverage surface: Python and analysis assets
 
 ## Verification
 
 - Run Rust verification from `rust/`: `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`
-- If behavior changes in compatibility surfaces, review `src/` and `tests/` too.
+- If compatibility behavior changes, review `src/` and `tests/` too
 
 ## Repository shape
 
-- `rust/` contains the active CLI/runtime implementation and should be the default place for product work.
-- `src/` contains compatibility and parity-oriented surfaces.
-- `tests/` contains validation surfaces for compatibility logic.
-- `docs/` contains the Anvil architecture, roadmap, and Claude-derived priority map.
+- `rust/` contains the shipping implementation core and should be the default place for product work
+- `src/` contains compatibility, analysis, and coverage-oriented surfaces
+- `tests/` contains validation for compatibility and porting flows
+- `docs/` contains the shipping plan, roadmap, architecture, and coverage docs
 
 ## Working agreement
 
-- Prefer small, reviewable changes.
-- Keep Anvil branding and terminology consistent in new docs.
-- Do not assume Anvil is tied permanently to Anthropic-only flows.
-- When adding model-facing behavior, design the runtime around provider adapters rather than vendor-specific branching.
-- Keep shared defaults in `.claude.json`; reserve `.claude/settings.local.json` for machine-local overrides.
+- Prefer small, reviewable changes
+- Keep Anvil terminology consistent in product-facing docs
+- Design model-facing logic around provider adapters rather than vendor-specific branching inside the runtime
+- Keep shared defaults in `.claude.json`; reserve `.claude/settings.local.json` for machine-local overrides
+- After every major milestone, update `README.md`, `docs/shipping-plan.md`, `docs/roadmap.md`, `docs/target-architecture.md`, and `PARITY.md` if their claims changed

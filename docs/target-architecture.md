@@ -1,201 +1,203 @@
 # Anvil Target Architecture
 
-## Design Goal
+## Product Goal
 
-Build a terminal-first coding agent with Claude-like capabilities while keeping the core runtime independent from any single model vendor.
+Ship Anvil as a terminal-first coding agent whose core runtime, tool loop, permissions, memory, and workflow behavior belong to Anvil rather than to any single model vendor.
 
-## Core Principle
+## Architecture Principles
 
-The engine is Anvil.
+- The engine is Anvil.
+- Providers are adapters.
+- Product logic stays in the runtime, not in vendor-specific branches.
+- Tool and command contracts must be stable across providers.
+- Extension surfaces must be first-class, not runtime hacks.
+- The shipping implementation lives primarily in Rust.
 
-The model is a provider plugged into Anvil.
+## Current Implemented Architecture
 
-That separation lets us preserve a consistent user experience while swapping between providers based on cost, capability, latency, or availability.
+The current product core already exists and is centered in the Rust workspace.
 
-## Runtime Layers
+### Implemented crates
 
-### 1. Product Shell
+- `api`: provider-facing Anthropic client, auth, request types, retries, and SSE parsing
+- `commands`: shared slash-command registry and help metadata
+- `compat-harness`: source-shape extraction and coverage helpers
+- `runtime`: sessions, prompts, permissions, hooks, usage, config, MCP, and orchestration
+- `rusty-claude-cli`: REPL, prompt execution, rendering, argument parsing, and CLI glue
+- `tools`: built-in tool registry and tool execution implementations
 
-User-facing surfaces:
+### Implemented behavior
+
+- REPL and one-shot prompt execution
+- session persistence, resume, export, and compaction
+- permission modes and tool allowlists
+- local shell and PowerShell execution
+- file, search, web, notebook, todo, skill, REPL, and sub-agent tools
+- OAuth and API-key auth flows
+- MCP stdio bootstrap and routing
+- hooks runtime support
+- usage and cost tracking
+
+## Target Shipping Architecture
+
+Anvil should ship with the following architectural layers.
+
+### 1. Product shell
+
+Responsibilities:
 
 - interactive REPL
 - one-shot prompt mode
-- JSON and NDJSON structured output
-- session resume/export
-- slash commands
-- config inspection and doctor flows
+- structured output modes
+- session resume and export
+- command execution and help flows
+- rendering and operator feedback
 
-Suggested home:
+Current state:
 
-- `rust/crates/anvil-cli`
-- later `rust/crates/transports` for SDK/editor/remote integrations
+- implemented in `rust/crates/rusty-claude-cli`
+- stable foundation exists
+- broader command surface and cleaner structured transport are still needed
 
-### 2. Engine Runtime
+### 2. Engine runtime
 
-The main orchestration layer:
+Responsibilities:
 
-- system prompt assembly
 - conversation state
-- model streaming
-- tool call loop
-- permission checks
-- compaction and token budgets
-- transcript/session persistence
-- hook execution
-- task lifecycle
+- prompt assembly
+- permissions
+- tool orchestration
+- hooks
+- compaction
+- usage tracking
+- session persistence
+- MCP and local workflow plumbing
 
-Suggested home:
+Current state:
 
-- `rust/crates/runtime`
+- implemented in `rust/crates/runtime`
+- core engine exists and is tested
+- still needs provider decoupling and broader product orchestration
 
-### 3. Tool System
+### 3. Tool system
 
-A unified tool registry with typed schemas, policies, and execution adapters:
+Responsibilities:
 
-- bash
-- PowerShell
-- file read/write/edit
-- grep/glob/search
-- web fetch/search
-- notebook support
-- MCP tool bridging
-- git and repo workflows
-- task and sub-agent tools
-- planning/review helpers
+- tool registry
+- schemas and validation
+- execution adapters
+- permission-aware access
+- built-in tool families
+- future plugin and MCP tool injection
 
-Suggested home:
+Current state:
 
-- `rust/crates/tools`
+- implemented in `rust/crates/tools`
+- good local core exists
+- tool breadth still lags the full target feature set
 
-### 4. Command Layer
+### 4. Provider layer
 
-Slash command registry and handlers:
+Responsibilities:
 
-- `/help`
-- `/status`
-- `/compact`
-- `/clear`
-- `/model`
-- `/permissions`
-- `/config`
-- `/memory`
-- `/review`
-- `/plan`
-- `/tasks`
-- `/mcp`
-- `/plugins`
-- `/skills`
+- normalize provider request and response flows
+- stream text and tool events into one internal contract
+- normalize usage and finish reasons
+- advertise provider capabilities
+- support configuration-based provider selection
 
-Suggested home:
+Current state:
 
-- `rust/crates/commands`
+- not yet separated as its own layer
+- Anthropic support exists inside the current API/runtime path
+- shipping requires extracting a provider abstraction and adding more adapters
 
-### 5. Provider Adapters
-
-Provider-facing model adapters behind one internal interface.
-
-Target interface responsibilities:
-
-- send request
-- stream output events
-- parse tool-use blocks
-- normalize usage/cost data
-- expose provider capabilities
-
-Initial provider plan:
-
-1. `AnthropicAdapter`
-2. `OpenAICompatibleAdapter`
-3. `OpenAIResponsesAdapter`
-4. `GeminiAdapter`
-
-Suggested home:
+Target home:
 
 - `rust/crates/providers`
 
-### 6. Skills and Plugins
+### 5. Command layer
 
-Extension surfaces, not core runtime hacks.
+Responsibilities:
 
-Skills:
+- slash-command registry
+- validation and parsing
+- shared help metadata
+- runtime command handlers
+- future plan, review, tasks, skills, plugin, and MCP workflows
 
-- bundled skills
-- local project skills
-- user-level skills
-- MCP-derived skills
-- ranking and discovery
+Current state:
 
-Plugins:
+- implemented in `rust/crates/commands`
+- current command core is solid
+- major command families are still missing
 
-- manifest loading
-- install/enable/disable
-- command registration
-- tool registration
-- hook registration
-- optional MCP integration
+### 6. Extension surfaces
 
-Suggested home:
+Responsibilities:
+
+- bundled skill registry
+- project and user skill loading
+- plugin loading and lifecycle
+- tool and command injection
+- hook extensions
+- future marketplace support
+
+Current state:
+
+- local skill-file loading exists
+- plugin system is not implemented
+- full skills registry is not implemented
+
+Target homes:
 
 - `rust/crates/skills`
 - `rust/crates/plugins`
 
-### 7. Agent Orchestration
+### 7. Agent orchestration
 
-Multi-step and multi-agent execution:
+Responsibilities:
 
-- planner
-- executor
-- verifier
-- background jobs
-- local sub-agents
-- remote task runners
+- plan, execute, verify loops
+- background work
+- task views and summaries
+- sub-agent control
+- future remote workers
 
-Suggested home:
+Current state:
+
+- sub-agent primitives exist
+- full orchestration product surface does not yet exist
+
+Target home:
 
 - `rust/crates/agents`
 
-### 8. Storage and Config
+### 8. Storage and transport
 
-- session store
-- config hierarchy
-- local memory
-- project memory
-- telemetry and traces
-- cached tool outputs
+Responsibilities:
 
-Suggested home:
+- local session store
+- memory stores
+- future structured and remote transports
+- cached outputs and traces
+- import/export boundaries
+
+Current state:
+
+- session persistence exists in runtime
+- broader storage and transport separation is still pending
+
+Target homes:
 
 - `rust/crates/storage`
+- `rust/crates/transports`
 
-## Provider Model
+## Provider Contract Requirement
 
-Anvil should support two operating modes.
+Before shipping, Anvil should standardize on one internal provider event model.
 
-### Mode A: Single Provider
-
-One configured provider powers the whole session.
-
-Good for:
-
-- simple setups
-- predictable behavior
-- lower operational complexity
-
-### Mode B: Routed Provider Selection
-
-The engine chooses a provider by task type or user preference.
-
-Examples:
-
-- Anthropic for long-form coding turns
-- OpenAI-compatible endpoint for structured tool calling
-- Gemini for large-context analysis
-
-This routing must be explicit and inspectable. Users should always know which provider handled a turn.
-
-## Recommended Internal Contract
-
-Anvil should standardize on one internal event stream:
+Recommended event families:
 
 - `TextDelta`
 - `ToolUseStart`
@@ -206,28 +208,25 @@ Anvil should standardize on one internal event stream:
 - `MessageStop`
 - `Error`
 
-Every provider adapter maps its native protocol into this contract.
+Every provider adapter should map its native protocol into this contract so the CLI, runtime, tools, and session store do not need vendor-specific logic.
 
-That gives the CLI, session layer, storage layer, and tool loop one stable runtime shape.
+## Shipping Architecture Decisions
 
-## MVP End-State
+These decisions are locked in unless we intentionally revisit them:
 
-To count as Claude-like enough for daily use, Anvil should provide:
+- Rust remains the main shipping implementation language
+- Python compatibility and analysis surfaces remain supporting assets, not the product core
+- provider-specific protocol handling must not leak across the runtime
+- plugin and skill systems should extend the engine without modifying core crates every time
+- README and planning docs must be updated when architecture meaningfully changes
 
-- interactive coding REPL
-- one-shot prompt mode
-- shell and file tools
-- permission modes
-- session persistence
-- compaction
-- MCP support
-- slash commands for status/config/review/plan
-- local skills
-- at least two model-provider adapters
+## Architecture Exit Criteria
 
-## Important Non-Goals
+We can call the architecture ready for first shipping only when all of the following are true:
 
-- chasing one-to-one parity with every UI detail from the source snapshot
-- tightly coupling the product to a single model vendor
-- inheriting risky defaults without review
-- preserving old claw-code branding or public fork identity
+- provider abstraction exists and is wired into the runtime
+- at least two provider adapters are available
+- command and tool surfaces cover the required shipping workflows
+- extension surfaces exist for skills and plugins
+- release packaging and CI are in place
+- documentation matches the actual architecture in the codebase

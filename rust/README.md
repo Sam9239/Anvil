@@ -1,150 +1,80 @@
-# Anvil - Rust Implementation
+# Anvil Rust Workspace
 
-# Anvil - Rust Implementation
+This directory contains the active shipping implementation of Anvil.
+
+## Purpose
+
+The Rust workspace is the core product engine for Anvil. It is where the CLI, runtime, built-in tools, command surface, auth flows, session handling, MCP support, and most shipping work should happen.
+
+## Current Workspace Status
+
+Implemented today:
+
+- `anvil` CLI binary
+- interactive REPL and one-shot prompt mode
+- Anthropic API client and OAuth flow
+- session persistence, resume, export, and compaction
+- permission system and tool allowlists
+- MCP stdio bootstrap and tool routing
+- hooks runtime support
+- tool implementations for shell, PowerShell, file operations, search, web, todo, notebook, skill loading, REPL execution, and sub-agent primitives
+- passing Rust workspace tests
+
+Not finished yet:
+
+- provider abstraction layer
+- OpenAI-compatible and Gemini adapters
+- full command breadth for planning, review, tasks, skills, plugins, and MCP management
+- plugin system
+- full skills registry
+- packaging and distribution workflow
 
 ## Quick Start
 
 ```bash
-# Build
-cd rust/
+cd rust
 cargo build --release
-
-# Run interactive REPL
 ./target/release/anvil
+```
 
-# One-shot prompt
+One-shot prompt:
+
+```bash
 ./target/release/anvil prompt "explain this codebase"
-
-# With specific model
-./target/release/anvil --model sonnet prompt "fix the bug in main.rs"
 ```
 
-## Configuration
-
-Set your API credentials:
+## Verification
 
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-# Or use a proxy
-export ANTHROPIC_BASE_URL="https://your-proxy.com"
+cargo fmt
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
 ```
-
-Or authenticate via OAuth:
-
-```bash
-anvil login
-```
-
-## Features
-
-| Feature | Status |
-|---------|--------|
-| Anthropic API + streaming | ✅ |
-| OAuth login/logout | ✅ |
-| Interactive REPL (rustyline) | ✅ |
-| Tool system (bash, read, write, edit, grep, glob) | ✅ |
-| Web tools (search, fetch) | ✅ |
-| Sub-agent orchestration | ✅ |
-| Todo tracking | ✅ |
-| Notebook editing | ✅ |
-| CLAUDE.md / project memory | ✅ |
-| Config file hierarchy (.claude.json) | ✅ |
-| Permission system | ✅ |
-| MCP server lifecycle | ✅ |
-| Session persistence + resume | ✅ |
-| Extended thinking (thinking blocks) | ✅ |
-| Cost tracking + usage display | ✅ |
-| Git integration | ✅ |
-| Markdown terminal rendering (ANSI) | ✅ |
-| Model aliases (opus/sonnet/haiku) | ✅ |
-| Slash commands (/status, /compact, /clear, etc.) | ✅ |
-| Hooks (PreToolUse/PostToolUse) | Config + runtime support |
-| Plugin system | 📋 Planned |
-| Skills registry | 📋 Planned |
-
-## Model Aliases
-
-Short names resolve to the latest model versions:
-
-| Alias | Resolves To |
-|-------|------------|
-| `opus` | `claude-opus-4-6` |
-| `sonnet` | `claude-sonnet-4-6` |
-| `haiku` | `claude-haiku-4-5-20251213` |
-
-## CLI Flags
-
-```
-anvil [OPTIONS] [COMMAND]
-
-Options:
-  --model MODEL                    Set the model (alias or full name)
-  --dangerously-skip-permissions   Skip all permission checks
-  --permission-mode MODE           Set read-only, workspace-write, or danger-full-access
-  --allowedTools TOOLS             Restrict enabled tools
-  --output-format FORMAT           Output format (text or json)
-  --version, -V                    Print version info
-
-Commands:
-  prompt <text>      One-shot prompt (non-interactive)
-  login              Authenticate via OAuth
-  logout             Clear stored credentials
-  init               Initialize project config
-  doctor             Check environment health
-  self-update        Update to latest version
-```
-
-## Slash Commands (REPL)
-
-| Command | Description |
-|---------|-------------|
-| `/help` | Show help |
-| `/status` | Show session status (model, tokens, cost) |
-| `/cost` | Show cost breakdown |
-| `/compact` | Compact conversation history |
-| `/clear` | Clear conversation |
-| `/model [name]` | Show or switch model |
-| `/permissions` | Show or switch permission mode |
-| `/config [section]` | Show config (env, hooks, model) |
-| `/memory` | Show CLAUDE.md contents |
-| `/diff` | Show git diff |
-| `/export [path]` | Export conversation |
-| `/session [id]` | Resume a previous session |
-| `/version` | Show version |
 
 ## Workspace Layout
 
-```
+```text
 rust/
-├── Cargo.toml              # Workspace root
-├── Cargo.lock
-└── crates/
-    ├── api/                # Anthropic API client + SSE streaming
-    ├── commands/           # Shared slash-command registry
-    ├── compat-harness/     # TS manifest extraction harness
-    ├── runtime/            # Session, config, permissions, MCP, prompts
-    ├── rusty-claude-cli/   # Main CLI binary (`anvil`)
-    └── tools/              # Built-in tool implementations
+|-- Cargo.toml
+|-- Cargo.lock
+`-- crates/
+    |-- api/
+    |-- commands/
+    |-- compat-harness/
+    |-- runtime/
+    |-- rusty-claude-cli/
+    `-- tools/
 ```
 
-### Crate Responsibilities
+## Crate Responsibilities
 
-- **api** — HTTP client, SSE stream parser, request/response types, auth (API key + OAuth bearer)
-- **commands** — Slash command definitions and help text generation
-- **compat-harness** — Extracts tool/prompt manifests from upstream TS source
-- **runtime** — `ConversationRuntime` agentic loop, `ConfigLoader` hierarchy, `Session` persistence, permission policy, MCP client, system prompt assembly, usage tracking
-- **rusty-claude-cli** — REPL, one-shot prompt, streaming display, tool call rendering, CLI argument parsing
-- **tools** — Tool specs + execution: Bash, ReadFile, WriteFile, EditFile, GlobSearch, GrepSearch, WebSearch, WebFetch, Agent, TodoWrite, NotebookEdit, Skill, ToolSearch, REPL runtimes
+- `api`: HTTP client, auth, request types, retry logic, and streaming parsing
+- `commands`: shared slash-command registry and command metadata
+- `compat-harness`: coverage extraction and source-shape comparison helpers
+- `runtime`: sessions, prompts, permissions, MCP plumbing, hooks, usage, and orchestration
+- `rusty-claude-cli`: REPL, prompt execution, rendering, and CLI argument handling
+- `tools`: built-in tool registry and tool execution logic
 
-## Stats
+## Working Rule
 
-- **~20K lines** of Rust
-- **6 crates** in workspace
-- **Binary name:** `anvil`
-- **Default model:** `claude-opus-4-6`
-- **Default permissions:** `danger-full-access`
-
-## License
-
-See repository root.
-
+When a major implementation milestone lands in this workspace, also update the root [README.md](../README.md) and the relevant documents under [docs](../docs).

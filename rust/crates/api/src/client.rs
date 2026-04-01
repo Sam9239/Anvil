@@ -622,7 +622,7 @@ mod tests {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
             .lock()
-            .expect("env lock")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     fn temp_config_home() -> std::path::PathBuf {
@@ -634,6 +634,37 @@ mod tests {
                 .expect("time")
                 .as_nanos()
         ))
+    }
+
+    struct IsolatedAuthEnv {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        config_home: std::path::PathBuf,
+    }
+
+    impl IsolatedAuthEnv {
+        fn new() -> Self {
+            let guard = env_lock();
+            let config_home = temp_config_home();
+            std::fs::create_dir_all(&config_home).expect("create temp config dir");
+            std::env::set_var("CLAUDE_CONFIG_HOME", &config_home);
+            std::env::remove_var("ANTHROPIC_AUTH_TOKEN");
+            std::env::remove_var("ANTHROPIC_API_KEY");
+            clear_oauth_credentials().ok();
+            Self {
+                _guard: guard,
+                config_home,
+            }
+        }
+    }
+
+    impl Drop for IsolatedAuthEnv {
+        fn drop(&mut self) {
+            clear_oauth_credentials().ok();
+            std::env::remove_var("ANTHROPIC_AUTH_TOKEN");
+            std::env::remove_var("ANTHROPIC_API_KEY");
+            std::env::remove_var("CLAUDE_CONFIG_HOME");
+            let _ = std::fs::remove_dir_all(&self.config_home);
+        }
     }
 
     fn sample_oauth_config(token_url: String) -> OAuthConfig {
@@ -668,43 +699,35 @@ mod tests {
 
     #[test]
     fn read_api_key_requires_presence() {
-        let _guard = env_lock();
-        std::env::remove_var("ANTHROPIC_AUTH_TOKEN");
-        std::env::remove_var("ANTHROPIC_API_KEY");
-        std::env::remove_var("CLAUDE_CONFIG_HOME");
+        let _env = IsolatedAuthEnv::new();
         let error = super::read_api_key().expect_err("missing key should error");
         assert!(matches!(error, crate::error::ApiError::MissingApiKey));
     }
 
     #[test]
     fn read_api_key_requires_non_empty_value() {
-        let _guard = env_lock();
+        let _env = IsolatedAuthEnv::new();
         std::env::set_var("ANTHROPIC_AUTH_TOKEN", "");
-        std::env::remove_var("ANTHROPIC_API_KEY");
         let error = super::read_api_key().expect_err("empty key should error");
         assert!(matches!(error, crate::error::ApiError::MissingApiKey));
-        std::env::remove_var("ANTHROPIC_AUTH_TOKEN");
     }
 
     #[test]
     fn read_api_key_prefers_api_key_env() {
-        let _guard = env_lock();
+        let _env = IsolatedAuthEnv::new();
         std::env::set_var("ANTHROPIC_AUTH_TOKEN", "auth-token");
         std::env::set_var("ANTHROPIC_API_KEY", "legacy-key");
         assert_eq!(
             super::read_api_key().expect("api key should load"),
             "legacy-key"
         );
-        std::env::remove_var("ANTHROPIC_AUTH_TOKEN");
-        std::env::remove_var("ANTHROPIC_API_KEY");
     }
 
     #[test]
     fn read_auth_token_reads_auth_token_env() {
-        let _guard = env_lock();
+        let _env = IsolatedAuthEnv::new();
         std::env::set_var("ANTHROPIC_AUTH_TOKEN", "auth-token");
         assert_eq!(super::read_auth_token().as_deref(), Some("auth-token"));
-        std::env::remove_var("ANTHROPIC_AUTH_TOKEN");
     }
 
     #[test]
@@ -721,14 +744,12 @@ mod tests {
 
     #[test]
     fn auth_source_from_env_combines_api_key_and_bearer_token() {
-        let _guard = env_lock();
+        let _env = IsolatedAuthEnv::new();
         std::env::set_var("ANTHROPIC_AUTH_TOKEN", "auth-token");
         std::env::set_var("ANTHROPIC_API_KEY", "legacy-key");
         let auth = AuthSource::from_env().expect("env auth");
         assert_eq!(auth.api_key(), Some("legacy-key"));
         assert_eq!(auth.bearer_token(), Some("auth-token"));
-        std::env::remove_var("ANTHROPIC_AUTH_TOKEN");
-        std::env::remove_var("ANTHROPIC_API_KEY");
     }
 
     #[test]
@@ -992,3 +1013,5 @@ mod tests {
         );
     }
 }
+
+

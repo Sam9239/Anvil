@@ -230,9 +230,9 @@ fn format_hook_warning(command: &str, code: i32, stdout: Option<&str>, stderr: &
 
 fn shell_command(command: &str) -> CommandWithStdin {
     #[cfg(windows)]
-    let mut command_builder = {
-        let mut command_builder = Command::new("cmd");
-        command_builder.arg("/C").arg(command);
+    let command_builder = {
+        let mut command_builder = Command::new("powershell");
+        command_builder.args(["-NoLogo", "-NonInteractive", "-Command", command]);
         CommandWithStdin::new(command_builder)
     };
 
@@ -339,7 +339,7 @@ mod tests {
 
     #[cfg(windows)]
     fn shell_snippet(script: &str) -> String {
-        script.replace('\'', "\"")
+        script.replace("printf ", "Write-Output ")
     }
 
     #[cfg(not(windows))]
@@ -347,3 +347,6 @@ mod tests {
         script.to_string()
     }
 }
+
+
+

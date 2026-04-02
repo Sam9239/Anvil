@@ -6,11 +6,12 @@ Ship Anvil as a deployment-ready, terminal-first coding agent CLI that can opera
 
 ## Current Phase Snapshot
 
-As of 2026-04-01:
+As of 2026-04-02:
 
 - Phase 0: complete
 - Phase 1: complete
-- Phase 2: next priority (not started)
+- Phase 2A: complete (provider abstraction, 4 adapters, model registry)
+- Phase 2B-2D: next priority (streaming engine, context assembly)
 - Phase 3: required before ship
 - Phase 4: required before ship
 - Phase 5: required before ship
@@ -23,7 +24,7 @@ Anvil was compared against a production coding agent reference (Claude Code src,
 
 | Area | Anvil Status | Reference Status | Gap Severity |
 |------|-------------|------------------|--------------|
-| Provider abstraction | Not started | Single-provider but decoupled | **Critical** |
+| Provider abstraction | Phase 2A complete (4 adapters, 13 models) | Single-provider but decoupled | **Closed** |
 | Streaming query loop | Basic conversation loop | Async generator with auto-compact, recovery, thinking preservation | **Critical** |
 | Tool breadth | ~18 tools, many stubbed | ~60 tools, all production-grade | **High** |
 | Permission depth | 3 basic modes | Multi-level: rules, hooks, classifiers, auto-mode | **High** |
@@ -66,36 +67,57 @@ Delivered:
 
 ## Phase 2: Provider Abstraction And Streaming Engine
 
-Status: next priority
+Status: Phase 2A complete, Phase 2B-2D next
 
 This phase transforms Anvil from an Anthropic-only client into a provider-agnostic engine. It also upgrades the conversation loop from basic request-response to a production-grade streaming engine.
 
-### 2A: Provider Interface
+### 2A: Provider Interface And Adapters
 
-Required deliverables:
+Status: **complete** (2026-04-02)
 
-- define a `Provider` trait in a new `rust/crates/providers/` crate:
-  ```
-  Provider {
-    fn stream_message(request) -> Stream<ProviderEvent>
-    fn capabilities() -> ProviderCapabilities
-    fn normalize_usage(raw) -> TokenUsage
-    fn model_id() -> String
+Delivered:
+
+- `Provider` trait in `rust/crates/providers/` crate:
+  ```rust
+  pub trait Provider {
+      fn stream_message(&mut self, request: &ProviderRequest)
+          -> Result<Vec<ProviderEvent>, ProviderError>;
+      fn capabilities(&self) -> ProviderCapabilities;
+      fn model_id(&self) -> &str;
+      fn provider_kind(&self) -> ProviderKind;
   }
   ```
-- define `ProviderEvent` enum: `TextDelta`, `ToolUseStart`, `ToolUseInputDelta`, `ToolUseStop`, `ToolResult`, `Usage`, `MessageStop`, `Error`
-- define `ProviderCapabilities`: max tokens, tool support, vision, thinking, streaming
-- move Anthropic-specific logic from `rust/crates/api/` behind the provider trait
-- keep current Anthropic tests green through the new interface
+- `ProviderEvent` enum: `TextDelta`, `ToolUseStart`, `ToolUseInputDelta`, `ToolUseComplete`, `Usage`, `MessageStop`, `Error`
+- `ProviderCapabilities`: max context tokens, max output tokens, tool support, vision, streaming
+- `ProviderError`: typed errors with `Auth`, `Network`, `RateLimited`, `ContextTooLong`, `Api`, `Parse`, `Other`
+- `StopReason` enum: `EndTurn`, `MaxTokens`, `ToolUse`, `StopSequence`
+- Provider-agnostic request types: `ProviderRequest`, `ChatMessage`, `ChatContent`, `ChatRole`, `ToolDefinition`
+- `resolve_provider_model()`: parses `"openai:gpt-4.1"` or auto-detects from model name prefix
+- 4 provider adapters:
+  - **AnthropicProvider**: wraps existing `api` crate, full SSE stream parsing, error mapping
+  - **OpenAiProvider**: OpenAI Chat Completions API with streaming SSE and JSON modes, tool_call accumulation
+  - **OpenAiProvider::new_xai()**: xAI Grok via OpenAI-compatible endpoint
+  - **GeminiProvider**: Google Generative Language API with `generateContent`/`streamGenerateContent`
+- `ModelRegistry` with 13 models across 4 providers (Anthropic, OpenAI, Google, xAI):
+  - Display name, API model ID, provider kind, tier (Fast/Balanced/Powerful)
+  - Max context tokens, default max output tokens, tool/vision support
+  - Per-model pricing for cost estimation
+  - Lookup by ID, alias, or provider; default model per provider
+- `pricing_for_model()` and `max_tokens_for_model()` utility functions
+- 25 unit tests passing, clippy clean, fmt clean
 
-### 2B: Provider Adapters
+### 2B: CLI Provider Integration
+
+Status: next priority
 
 Required deliverables:
 
-- Anthropic adapter: wrap existing `api` crate behind provider trait
-- OpenAI-compatible adapter: implement streaming via OpenAI chat completions API, map tool_calls to Anvil tool events, handle function calling differences
-- Gemini adapter (stretch): define path for Gemini API support
-- provider and model selection via `--model provider:model-name` CLI flag and config
+- wire `providers` crate into `rusty-claude-cli`
+- replace `AnthropicRuntimeClient` with provider-based client that dispatches to the correct adapter
+- read provider API keys from environment variables per provider
+- implement `--model provider:model-name` CLI flag
+- update `/model` command to support provider switching
+- update `/cost` command to use per-model pricing from registry
 
 ### 2C: Streaming Query Engine
 
@@ -457,8 +479,9 @@ Potential deliverables:
 
 For maximum deployment velocity, work in this order within each phase:
 
-1. **Phase 2A+2B** (Provider interface + Anthropic adapter): unblocks everything else
-2. **Phase 2C** (Streaming engine): required for reliable operation
+1. ~~**Phase 2A** (Provider interface + adapters): complete~~
+2. **Phase 2B** (CLI provider integration): wire providers into CLI
+3. **Phase 2C** (Streaming engine): required for reliable operation
 3. **Phase 3B** (Complete existing tools): highest user-facing impact
 4. **Phase 3D** (Permission upgrade): required for safe operation
 5. **Phase 6B** (CI pipeline): should be set up early to catch regressions

@@ -72,12 +72,13 @@ cargo build --release
 | **Cost Reporting** | `/cost` command shows session token usage and estimated cost |
 | **Session Export** | Export sessions as JSON for analysis or sharing |
 
+| **Multi-Provider Support** | Provider abstraction with adapters for Anthropic, OpenAI, Google, xAI |
+| **Model Registry** | 13 models across 4 providers with pricing, capabilities, and tier metadata |
+
 ### Planned (Pre-Release)
 
 | Feature | Phase | Priority |
 |---------|-------|----------|
-| Provider abstraction (multi-LLM) | Phase 2 | Critical |
-| OpenAI-compatible provider | Phase 2 | Critical |
 | Streaming query engine with auto-compact | Phase 2 | Critical |
 | Full context assembly (git status, project docs) | Phase 2 | Critical |
 | Complete all tool implementations | Phase 3 | High |
@@ -111,7 +112,7 @@ Anvil is organized into layered crates within a Rust workspace:
 |                     Provider Adapters                             |
 |  Vendor-specific streaming, tool-call normalization, usage        |
 |  mapping behind one internal ProviderEvent contract               |
-|  Crate: providers (planned), api (current Anthropic)             |
+|  Crate: providers (Anthropic, OpenAI, Gemini, xAI), api         |
 +------------------------------------------------------------------+
 |                     Extension Surfaces                            |
 |  Skills, plugins, task orchestration, hook extensions              |
@@ -128,12 +129,12 @@ Anvil is organized into layered crates within a Rust workspace:
 | Crate | Role | Status |
 |-------|------|--------|
 | `api` | Anthropic API client, SSE streaming, OAuth, retries | Functional |
+| `providers` | Multi-provider abstraction: Provider trait, model registry, 4 adapters (Anthropic, OpenAI, Google Gemini, xAI Grok) | Functional |
 | `runtime` | Conversation engine, sessions, permissions, hooks, config, MCP, usage | Functional |
 | `tools` | Tool registry and 18 built-in tool implementations | Partial (stubs remain) |
 | `commands` | Slash command definitions and dispatch | Functional (15 commands) |
 | `rusty-claude-cli` | CLI binary, REPL, rendering, argument parsing | Functional |
 | `compat-harness` | Upstream manifest extraction for parity testing | Functional |
-| `providers` | Multi-provider abstraction layer | Planned |
 | `skills` | Bundled and user skill registry | Planned |
 | `plugins` | Plugin loading and lifecycle | Planned |
 
@@ -379,8 +380,10 @@ Anvil uses a layered configuration system:
 | Variable | Description |
 |----------|-------------|
 | `ANTHROPIC_API_KEY` | Anthropic API key |
-| `OPENAI_API_KEY` | OpenAI API key (planned) |
-| `ANVIL_MODEL` | Default model to use |
+| `OPENAI_API_KEY` | OpenAI API key |
+| `GOOGLE_API_KEY` | Google Gemini API key |
+| `XAI_API_KEY` | xAI (Grok) API key |
+| `ANVIL_MODEL` | Default model to use (e.g. `openai:gpt-4.1`) |
 | `ANVIL_CONFIG` | Path to config file |
 | `ANVIL_LOG` | Log level (debug, info, warn, error) |
 
@@ -412,6 +415,107 @@ Anvil uses a layered configuration system:
   }
 }
 ```
+
+## Providers and Models
+
+Anvil supports multiple LLM providers through a unified `Provider` trait. Each provider adapter translates Anvil's internal request/event format to the vendor-specific wire protocol.
+
+### Provider Architecture
+
+```
+ProviderRequest (model-agnostic)
+  |
+  v
+Provider Trait
+  |-- AnthropicProvider  -> Anthropic Messages API (SSE streaming)
+  |-- OpenAiProvider     -> OpenAI Chat Completions API (SSE streaming)
+  |-- GeminiProvider     -> Google Generative Language API (SSE streaming)
+  |-- OpenAiProvider::new_xai() -> xAI API (OpenAI-compatible)
+  |
+  v
+Vec<ProviderEvent> (unified events)
+  |-- TextDelta          Incremental text output
+  |-- ToolUseStart       Tool call begins (id, name)
+  |-- ToolUseInputDelta  Streaming tool input JSON fragment
+  |-- ToolUseComplete    Full tool call ready for execution
+  |-- Usage              Token counts for the response
+  |-- MessageStop        Model finished (with stop reason)
+  |-- Error              Provider-level error
+```
+
+### Supported Models
+
+#### Fast and Cost-Efficient
+
+| Model | Provider | API ID | Context | Max Output |
+|-------|----------|--------|---------|------------|
+| GPT-5 mini | OpenAI | `gpt-5-mini` | 128K | 16K |
+| Grok Code Fast 1 | xAI | `grok-code-fast-1` | 128K | 16K |
+| Gemini 3 Flash | Google | `gemini-3-flash` | 1M | 8K |
+| Claude Haiku 4.5 | Anthropic | `claude-haiku-4-5-20251001` | 200K | 8K |
+
+#### Versatile and Highly Intelligent
+
+| Model | Provider | API ID | Context | Max Output |
+|-------|----------|--------|---------|------------|
+| GPT-4o | OpenAI | `gpt-4o` | 128K | 16K |
+| GPT-4.1 | OpenAI | `gpt-4.1` | 1M | 32K |
+| GPT-5 | OpenAI | `gpt-5` | 128K | 32K |
+| Claude Sonnet 4 | Anthropic | `claude-sonnet-4-20250514` | 200K | 16K |
+| Claude Sonnet 4.5 | Anthropic | `claude-sonnet-4-5-20250514` | 200K | 16K |
+
+#### Most Powerful at Complex Tasks
+
+| Model | Provider | API ID | Context | Max Output |
+|-------|----------|--------|---------|------------|
+| GPT-5.1 | OpenAI | `gpt-5.1` | 256K | 32K |
+| GPT-5.2 | OpenAI | `gpt-5.2` | 256K | 32K |
+| Claude Opus 4.5 | Anthropic | `claude-opus-4-5-20250520` | 200K | 32K |
+| Gemini 3 Pro | Google | `gemini-3-pro` | 1M | 8K |
+
+### Model Selection
+
+```bash
+# Explicit provider prefix
+anvil --model openai:gpt-4.1
+anvil --model anthropic:claude-sonnet-4-20250514
+anvil --model google:gemini-3-flash
+anvil --model xai:grok-code-fast-1
+
+# Auto-detect from model name
+anvil --model gpt-4.1           # -> OpenAI
+anvil --model claude-sonnet-4   # -> Anthropic
+anvil --model gemini-3-flash    # -> Google
+anvil --model grok-code-fast-1  # -> xAI
+
+# Change mid-session
+anvil> /model gpt-5.1
+```
+
+### Provider Authentication
+
+| Provider | Environment Variable | Auth Method |
+|----------|---------------------|-------------|
+| Anthropic | `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` | API key or OAuth |
+| OpenAI | `OPENAI_API_KEY` | Bearer token |
+| Google | `GOOGLE_API_KEY` | API key (query param) |
+| xAI | `XAI_API_KEY` | Bearer token |
+
+### Adding a New Provider
+
+Implement the `Provider` trait in `rust/crates/providers/`:
+
+```rust
+pub trait Provider {
+    fn stream_message(&mut self, request: &ProviderRequest)
+        -> Result<Vec<ProviderEvent>, ProviderError>;
+    fn capabilities(&self) -> ProviderCapabilities;
+    fn model_id(&self) -> &str;
+    fn provider_kind(&self) -> ProviderKind;
+}
+```
+
+Then register the model entries in `ModelRegistry` and add the provider kind to `ProviderKind` enum.
 
 ## Permissions
 
@@ -604,6 +708,7 @@ rust/
     api/              # Anthropic API client, SSE, OAuth
     commands/         # Slash command registry and dispatch
     compat-harness/   # Upstream parity testing tools
+    providers/        # Multi-provider abstraction (Anthropic, OpenAI, Gemini, xAI)
     runtime/          # Core engine: conversation, sessions, permissions
     rusty-claude-cli/ # CLI binary: REPL, rendering, args
     tools/            # Built-in tool implementations
@@ -629,13 +734,15 @@ rust/
 
 ## Project Status
 
-### Current State (as of 2026-04-01)
+### Current State (as of 2026-04-02)
 
-Anvil has a stable Rust foundation with a working local agent core. It is **not yet deployment-ready** but is actively progressing toward its first public release.
+Anvil has a stable Rust foundation with a working local agent core and a multi-provider abstraction layer. It is **not yet deployment-ready** but is actively progressing toward its first public release.
 
 **What works:**
 - Interactive REPL and one-shot prompt mode
-- Conversation with Claude models via Anthropic API
+- Multi-provider support: Anthropic, OpenAI, Google Gemini, xAI Grok (4 providers, 13 models)
+- Provider trait abstraction with unified event stream
+- Model registry with pricing, capabilities, and tier metadata
 - 18 built-in tools (core file/shell/search tools are production quality)
 - Session persistence, resume, export, compaction
 - 15 slash commands
@@ -644,11 +751,10 @@ Anvil has a stable Rust foundation with a working local agent core. It is **not 
 - MCP stdio server connections
 - Project instruction discovery (CLAUDE.md)
 - Hook execution (pre/post tool use)
-- Cost tracking and reporting
-- Full Rust test suite passing on Windows
+- Cost tracking and reporting with per-model pricing
+- Full Rust test suite passing on Windows (7 crates, 50+ tests)
 
 **What does not work yet:**
-- Multi-provider support (Anthropic only)
 - Streaming query engine with auto-compaction
 - ~8 tools are still stubs (agent, skill, REPL, notebook, etc.)
 - Advanced permission features (auto-mode, classifiers)
@@ -663,7 +769,7 @@ Anvil has a stable Rust foundation with a working local agent core. It is **not 
 | Gate | Status | Description |
 |------|--------|-------------|
 | A: Foundation | Complete | Rust workspace stable, tests green |
-| B: Provider Decoupling | Not Started | Provider abstraction + adapters |
+| B: Provider Decoupling | Phase 2A Complete | Provider trait + 4 adapters + model registry |
 | C: Workflow Coverage | Partial | Commands + tools for daily use |
 | D: Extension Readiness | Not Started | Skills registry + plugin system |
 | E: Release Readiness | Not Started | Packaging + CI + docs |
@@ -678,7 +784,8 @@ See [docs/roadmap.md](docs/roadmap.md) for the full detailed roadmap.
 |-------|------|--------|-------|
 | 0 | Product Identity | Complete | Repo, branding, docs |
 | 1 | Runtime Hardening | Complete | Tests, Windows stability |
-| 2 | Provider + Streaming | Next | Multi-LLM, streaming engine |
+| 2A | Provider Abstraction | Complete | Provider trait, 4 adapters, model registry |
+| 2B-D | Streaming + Context | Next | Streaming engine, context assembly |
 | 3 | Tool Completion | Planned | All tools production-grade |
 | 4 | Command Expansion | Planned | 30+ slash commands |
 | 5 | Extensions | Planned | Skills, plugins, hooks |
@@ -700,6 +807,7 @@ See [docs/roadmap.md](docs/roadmap.md) for the full detailed roadmap.
 |       |-- api/              Anthropic API client
 |       |-- commands/         Slash command registry
 |       |-- compat-harness/   Upstream parity testing
+|       |-- providers/        Multi-provider abstraction layer
 |       |-- runtime/          Core engine
 |       |-- rusty-claude-cli/ CLI binary
 |       `-- tools/            Tool implementations
@@ -754,11 +862,12 @@ git push origin feature/my-feature
 
 ## Recent Milestones
 
-- Bootstrap of standalone Anvil repository
-- Product rebrand of Rust CLI to `anvil`
-- Windows hardening and full Rust workspace test stabilization
-- Comprehensive roadmap with deployment-ready phase plan
+- **Phase 2A: Provider Abstraction** (2026-04-02) — `providers` crate with `Provider` trait, 4 adapters (Anthropic, OpenAI, Google Gemini, xAI Grok), model registry (13 models), unified `ProviderEvent` stream, 25 unit tests passing
+- Comprehensive roadmap, README, and parity analysis overhaul
 - Reference analysis against production coding agent (1,900 files)
+- Windows hardening and full Rust workspace test stabilization
+- Product rebrand of Rust CLI to `anvil`
+- Bootstrap of standalone Anvil repository
 
 ## License
 

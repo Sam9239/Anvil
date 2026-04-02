@@ -9,6 +9,9 @@ Method: compare feature surfaces, registries, runtime plumbing, tool implementat
 Anvil has a working Rust foundation covering:
 
 - API client with SSE streaming and OAuth
+- multi-provider abstraction layer with 4 adapters (Anthropic, OpenAI, Google Gemini, xAI Grok)
+- model registry with 13 models, pricing, capabilities, and tier metadata
+- unified ProviderEvent streaming contract across all providers
 - conversation loop with session persistence
 - working local tool execution (file ops, shell, search, web)
 - MCP stdio bootstrap and routing
@@ -26,7 +29,7 @@ Anvil is **not yet at deployment-ready breadth**. The reference codebase provide
 
 | Gap | Anvil | Reference | Impact |
 |-----|-------|-----------|--------|
-| Provider abstraction | Anthropic-only, hardcoded | Single-provider but decoupled design | Cannot support multiple LLMs |
+| Provider abstraction | **Closed** — 4 adapters, 13 models, Provider trait | Single-provider but decoupled design | Gap closed |
 | Streaming query engine | Basic request-response loop | Async generator with auto-compact, recovery, thinking preservation | Unreliable in long sessions |
 | Packaging and CI | Local cargo build only | N/A (internal) | Cannot distribute to users |
 
@@ -256,29 +259,35 @@ Status: **basic loop works** - needs major upgrade for production reliability
 
 Current Rust coverage:
 
-- Anthropic API client with SSE streaming
-- OAuth authentication with PKCE
-- API key authentication
-- retry logic with exponential backoff
-- message request/response types
+- `Provider` trait in `rust/crates/providers/` with unified `ProviderEvent` contract
+- `ProviderEvent` enum: `TextDelta`, `ToolUseStart`, `ToolUseInputDelta`, `ToolUseComplete`, `Usage`, `MessageStop`, `Error`
+- `ProviderError` typed enum: `Auth`, `Network`, `RateLimited`, `ContextTooLong`, `Api`, `Parse`, `Other`
+- `StopReason` enum: `EndTurn`, `MaxTokens`, `ToolUse`, `StopSequence`
+- 4 provider adapters:
+  - `AnthropicProvider`: wraps `api` crate, SSE streaming, error mapping
+  - `OpenAiProvider`: Chat Completions API, SSE + JSON, tool_call accumulation
+  - `OpenAiProvider::new_xai()`: xAI Grok via OpenAI-compatible endpoint
+  - `GeminiProvider`: Google Generative Language API, `generateContent`/`streamGenerateContent`
+- `ModelRegistry` with 13 models across 4 providers, each with pricing and capabilities
+- `resolve_provider_model()`: parses `"openai:gpt-4.1"` or auto-detects from model name
+- Anthropic API client with SSE streaming, OAuth with PKCE, API key auth, retry logic
+- 25 provider tests passing, clippy clean
 
 Reference coverage:
 
-- single-provider but with clear event contract: TextDelta, ToolUseStart, ToolUseInputDelta, ToolUseStop, ToolResult, Usage, MessageStop, Error
+- single-provider but with clear event contract
 - usage normalization across provider differences
 - tool-call extraction from streaming events
 - thinking/redacted_thinking block handling
 
 Remaining gaps:
 
-- define provider trait and ProviderEvent contract
-- move Anthropic logic behind provider interface
-- implement OpenAI-compatible adapter
-- define Gemini adapter path
-- implement provider/model selection from config and CLI
-- normalize usage and finish reasons across providers
+- wire providers into CLI (replace `AnthropicRuntimeClient`)
+- implement provider/model selection via CLI flag and config
+- implement thinking block handling
+- add retry logic to OpenAI and Gemini adapters
 
-Status: **Anthropic works** - no abstraction layer exists
+Status: **strong** - Provider trait defined, 4 adapters implemented, model registry complete (2026-04-02)
 
 ### services/
 
@@ -340,17 +349,20 @@ Status: **basic** - needs expansion for good project awareness
 | Commands | 15 | ~100 | 15% |
 | Permission levels | 3 modes | 4 modes + rules + hooks + classifiers | 25% |
 | Compaction strategies | 1 (basic) | 4 (auto, reactive, micro, snip) | 25% |
-| Provider adapters | 1 (Anthropic) | 1 (but abstracted) | N/A |
+| Provider adapters | 4 (Anthropic, OpenAI, Gemini, xAI) | 1 (but abstracted) | **Exceeds** |
+| Registered models | 13 across 4 providers | N/A | N/A |
 | MCP transports | 1 (stdio) | 3 (stdio, HTTP/SSE, WebSocket) | 33% |
-| Rust test coverage | Green | N/A | Good |
-| Lines of Rust | ~18K | ~205K TypeScript | N/A |
+| Rust test coverage | Green (50+ tests) | N/A | Good |
+| Lines of Rust | ~20K | ~205K TypeScript | N/A |
 
 ## Current Assessment
 
 ### What can be called strong:
 
 - Rust foundation and type safety
-- test stability (workspace green)
+- test stability (workspace green, 50+ tests)
+- **provider abstraction** (Provider trait, 4 adapters, 13 models, unified event stream)
+- model registry with pricing, capabilities, tier metadata
 - core file/shell/search tools
 - session persistence and resume
 - permission mode framework
@@ -359,7 +371,7 @@ Status: **basic** - needs expansion for good project awareness
 
 ### What is blocking deployment:
 
-1. **Provider abstraction** - cannot support multiple LLMs
+1. ~~**Provider abstraction**~~ - **closed** (2026-04-02)
 2. **Streaming engine** - conversation loop needs reliability upgrades
 3. **Tool completeness** - 8 stubbed tools, 6+ missing tools
 4. **Permission depth** - cannot safely run in auto mode
@@ -371,15 +383,16 @@ Status: **basic** - needs expansion for good project awareness
 
 ### Priority order for closing gaps:
 
-1. Provider abstraction (unblocks multi-LLM)
-2. Streaming engine (unblocks reliability)
-3. Complete existing tools (highest user impact)
-4. Permission upgrade (unblocks auto mode)
-5. CI pipeline (catch regressions early)
-6. Command expansion (daily workflow coverage)
-7. Skills registry (community contribution)
-8. Plugin system (extensibility)
-9. Packaging (distribution)
+1. ~~Provider abstraction (unblocks multi-LLM)~~ — **closed 2026-04-02**
+2. CLI provider integration (wire adapters into runtime)
+3. Streaming engine (unblocks reliability)
+4. Complete existing tools (highest user impact)
+5. Permission upgrade (unblocks auto mode)
+6. CI pipeline (catch regressions early)
+7. Command expansion (daily workflow coverage)
+8. Skills registry (community contribution)
+9. Plugin system (extensibility)
+10. Packaging (distribution)
 
 ## Working Rule
 

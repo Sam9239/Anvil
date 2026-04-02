@@ -876,6 +876,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "providers"
+version = "0.1.0"
+dependencies = [
+ "api",
+ "reqwest",
+ "runtime",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "pulldown-cmark"
 version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

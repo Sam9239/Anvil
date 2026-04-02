@@ -1173,8 +1173,16 @@ mod tests {
     }
 
     fn cleanup_script(script_path: &Path) {
-        fs::remove_file(script_path).expect("cleanup script");
-        fs::remove_dir_all(script_path.parent().expect("script parent")).expect("cleanup dir");
+        match fs::remove_file(script_path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => panic!("cleanup script: {error}"),
+        }
+        match fs::remove_dir_all(script_path.parent().expect("script parent")) {
+            Ok(()) => {}
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => panic!("cleanup dir: {error}"),
+        }
     }
 
     fn manager_server_config(
@@ -1740,6 +1748,7 @@ mod tests {
         });
     }
 }
+
 
 
 

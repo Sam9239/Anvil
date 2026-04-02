@@ -11,7 +11,8 @@ As of 2026-04-02:
 - Phase 0: complete
 - Phase 1: complete
 - Phase 2A: complete (provider abstraction, 4 adapters, model registry)
-- Phase 2B-2D: next priority (streaming engine, context assembly)
+- Phase 2B: complete (live CLI/runtime provider routing, env-based provider auth)
+- Phase 2C-2D: next priority (streaming engine, context assembly)
 - Phase 3: required before ship
 - Phase 4: required before ship
 - Phase 5: required before ship
@@ -108,16 +109,19 @@ Delivered:
 
 ### 2B: CLI Provider Integration
 
-Status: next priority
+Status: complete (2026-04-02)
 
-Required deliverables:
+Delivered:
 
-- wire `providers` crate into `rusty-claude-cli`
-- replace `AnthropicRuntimeClient` with provider-based client that dispatches to the correct adapter
-- read provider API keys from environment variables per provider
-- implement `--model provider:model-name` CLI flag
-- update `/model` command to support provider switching
-- update `/cost` command to use per-model pricing from registry
+- wired `providers` crate into the live `anvil` CLI runtime
+- replaced `AnthropicRuntimeClient` with a provider-based client that dispatches to the correct adapter
+- wired provider API keys from environment variables per provider
+- enabled `--model provider:model-name` and provider-prefixed `/model` switching
+
+Still open in this area:
+
+- update `/cost` command to use per-model pricing from the provider registry
+- add first-run provider setup and config-backed provider defaults
 
 ### 2C: Streaming Query Engine
 

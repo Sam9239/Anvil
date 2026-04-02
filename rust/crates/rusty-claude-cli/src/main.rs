@@ -12,9 +12,14 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use api::{
-    resolve_startup_auth_source, AnthropicClient, AuthSource, ContentBlockDelta, InputContentBlock,
-    InputMessage, MessageRequest, MessageResponse, OutputContentBlock,
-    StreamEvent as ApiStreamEvent, ToolChoice, ToolDefinition, ToolResultContentBlock,
+    resolve_startup_auth_source, AnthropicClient, AuthSource, InputContentBlock, InputMessage,
+    MessageResponse, OutputContentBlock, ToolResultContentBlock,
+};
+use providers::{
+    AnthropicProvider, ChatContent as ProviderChatContent, ChatMessage as ProviderChatMessage,
+    ChatRole as ProviderChatRole, GeminiProvider, ModelRegistry, OpenAiProvider, Provider,
+    ProviderEvent, ProviderKind, ProviderRequest, ToolDefinition as ProviderToolDefinition,
+    max_tokens_for_model, resolve_provider_model,
 };
 
 use commands::{
@@ -34,14 +39,7 @@ use runtime::{
 use serde_json::json;
 use tools::{execute_tool, mvp_tool_specs, ToolSpec};
 
-const DEFAULT_MODEL: &str = "claude-opus-4-6";
-fn max_tokens_for_model(model: &str) -> u32 {
-    if model.contains("opus") {
-        32_000
-    } else {
-        64_000
-    }
-}
+const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
 const DEFAULT_DATE: &str = "2026-03-31";
 const DEFAULT_OAUTH_CALLBACK_PORT: u16 = 4545;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -163,11 +161,11 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
                 let value = args
                     .get(index + 1)
                     .ok_or_else(|| "missing value for --model".to_string())?;
-                model = resolve_model_alias(value).to_string();
+                model = resolve_model_alias(value);
                 index += 2;
             }
             flag if flag.starts_with("--model=") => {
-                model = resolve_model_alias(&flag[8..]).to_string();
+                model = resolve_model_alias(&flag[8..]);
                 index += 1;
             }
             "--output-format" => {
@@ -204,7 +202,7 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
                 }
                 return Ok(CliAction::Prompt {
                     prompt,
-                    model: resolve_model_alias(&model).to_string(),
+                    model: resolve_model_alias(&model),
                     output_format,
                     allowed_tools: normalize_allowed_tools(&allowed_tool_values)?,
                     permission_mode,
@@ -288,13 +286,27 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
     }
 }
 
-fn resolve_model_alias(model: &str) -> &str {
-    match model {
-        "opus" => "claude-opus-4-6",
-        "sonnet" => "claude-sonnet-4-6",
-        "haiku" => "claude-haiku-4-5-20251213",
-        _ => model,
+fn resolve_model_alias(model: &str) -> String {
+    if let Some((provider, raw_model)) = model.split_once(':') {
+        let resolved = ModelRegistry::find(raw_model)
+            .map(|info| info.model_id.to_string())
+            .unwrap_or_else(|| raw_model.to_string());
+        return format!("{provider}:{resolved}");
     }
+
+    match model {
+        "opus" => "claude-opus-4-5-20250520".to_string(),
+        "sonnet" => "claude-sonnet-4-20250514".to_string(),
+        "haiku" => "claude-haiku-4-5-20251001".to_string(),
+        _ => ModelRegistry::find(model)
+            .map(|info| info.model_id.to_string())
+            .unwrap_or_else(|| model.to_string()),
+    }
+}
+
+fn resolve_provider_target(model_spec: &str) -> (ProviderKind, String) {
+    let normalized = resolve_model_alias(model_spec);
+    resolve_provider_model(&normalized)
 }
 
 fn normalize_allowed_tools(values: &[String]) -> Result<Option<AllowedToolSet>, String> {
@@ -657,9 +669,17 @@ struct StatusUsage {
 }
 
 fn format_model_report(model: &str, message_count: usize, turns: u32) -> String {
+    let (provider_kind, resolved_model) = resolve_provider_target(model);
+    let resolved_line = if resolved_model != model {
+        format!("\n  Resolved model   {resolved_model}")
+    } else {
+        String::new()
+    };
+
     format!(
         "Model
   Current model    {model}
+  Provider         {provider_kind}{resolved_line}
   Session messages {message_count}
   Session turns    {turns}
 
@@ -991,7 +1011,7 @@ struct LiveCli {
     allowed_tools: Option<AllowedToolSet>,
     permission_mode: PermissionMode,
     system_prompt: Vec<String>,
-    runtime: ConversationRuntime<AnthropicRuntimeClient, CliToolExecutor>,
+    runtime: ConversationRuntime<ProviderRuntimeClient, CliToolExecutor>,
     session: SessionHandle,
 }
 
@@ -1262,7 +1282,7 @@ impl LiveCli {
             return Ok(false);
         };
 
-        let model = resolve_model_alias(&model).to_string();
+        let model = resolve_model_alias(&model);
 
         if model == self.model {
             println!(
@@ -2323,11 +2343,11 @@ fn build_runtime(
     emit_output: bool,
     allowed_tools: Option<AllowedToolSet>,
     permission_mode: PermissionMode,
-) -> Result<ConversationRuntime<AnthropicRuntimeClient, CliToolExecutor>, Box<dyn std::error::Error>>
+) -> Result<ConversationRuntime<ProviderRuntimeClient, CliToolExecutor>, Box<dyn std::error::Error>>
 {
     Ok(ConversationRuntime::new_with_features(
         session,
-        AnthropicRuntimeClient::new(model, enable_tools, emit_output, allowed_tools.clone())?,
+        ProviderRuntimeClient::new(model, enable_tools, emit_output, allowed_tools.clone())?,
         CliToolExecutor::new(allowed_tools, emit_output),
         permission_policy(permission_mode),
         system_prompt,
@@ -2381,32 +2401,67 @@ impl runtime::PermissionPrompter for CliPermissionPrompter {
     }
 }
 
-struct AnthropicRuntimeClient {
-    runtime: tokio::runtime::Runtime,
-    client: AnthropicClient,
-    model: String,
+struct ProviderRuntimeClient {
+    provider: Box<dyn Provider>,
+    model_id: String,
     enable_tools: bool,
     emit_output: bool,
     allowed_tools: Option<AllowedToolSet>,
 }
 
-impl AnthropicRuntimeClient {
+impl ProviderRuntimeClient {
     fn new(
         model: String,
         enable_tools: bool,
         emit_output: bool,
         allowed_tools: Option<AllowedToolSet>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        let (kind, model_id) = resolve_provider_target(&model);
         Ok(Self {
-            runtime: tokio::runtime::Runtime::new()?,
-            client: AnthropicClient::from_auth(resolve_cli_auth_source()?)
-                .with_base_url(api::read_base_url()),
-            model,
+            provider: build_provider(kind, &model_id)?,
+            model_id,
             enable_tools,
             emit_output,
             allowed_tools,
         })
     }
+}
+
+fn build_provider(
+    kind: ProviderKind,
+    model_id: &str,
+) -> Result<Box<dyn Provider>, Box<dyn std::error::Error>> {
+    match kind {
+        ProviderKind::Anthropic => Ok(Box::new(AnthropicProvider::new(
+            resolve_cli_auth_source()?,
+            model_id.to_string(),
+        )?)),
+        ProviderKind::OpenAi => Ok(Box::new(OpenAiProvider::new(
+            require_api_key("OPENAI_API_KEY")?,
+            model_id.to_string(),
+        )?)),
+        ProviderKind::Google => Ok(Box::new(GeminiProvider::new(
+            require_api_key("GOOGLE_API_KEY")?,
+            model_id.to_string(),
+        )?)),
+        ProviderKind::XAi => Ok(Box::new(OpenAiProvider::new_xai(
+            require_api_key("XAI_API_KEY")?,
+            model_id.to_string(),
+        )?)),
+    }
+}
+
+fn require_api_key(name: &str) -> Result<String, Box<dyn std::error::Error>> {
+    env::var(name)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("missing required environment variable `{name}`"),
+            )
+            .into()
+        })
 }
 
 fn resolve_cli_auth_source() -> Result<AuthSource, Box<dyn std::error::Error>> {
@@ -2419,145 +2474,117 @@ fn resolve_cli_auth_source() -> Result<AuthSource, Box<dyn std::error::Error>> {
     })?)
 }
 
-impl ApiClient for AnthropicRuntimeClient {
-    #[allow(clippy::too_many_lines)]
+impl ApiClient for ProviderRuntimeClient {
     fn stream(&mut self, request: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
-        let message_request = MessageRequest {
-            model: self.model.clone(),
-            max_tokens: max_tokens_for_model(&self.model),
-            messages: convert_messages(&request.messages),
-            system: (!request.system_prompt.is_empty()).then(|| request.system_prompt.join("\n\n")),
+        let provider_request = ProviderRequest {
+            model: self.model_id.clone(),
+            max_tokens: max_tokens_for_model(&self.model_id),
+            system_prompt: (!request.system_prompt.is_empty())
+                .then(|| request.system_prompt.join("\n\n")),
+            messages: convert_messages_to_provider(&request.messages),
             tools: self.enable_tools.then(|| {
                 filter_tool_specs(self.allowed_tools.as_ref())
                     .into_iter()
-                    .map(|spec| ToolDefinition {
+                    .map(|spec| ProviderToolDefinition {
                         name: spec.name.to_string(),
                         description: Some(spec.description.to_string()),
                         input_schema: spec.input_schema,
                     })
                     .collect()
             }),
-            tool_choice: self.enable_tools.then_some(ToolChoice::Auto),
             stream: true,
         };
 
-        self.runtime.block_on(async {
-            let mut stream = self
-                .client
-                .stream_message(&message_request)
-                .await
-                .map_err(|error| RuntimeError::new(error.to_string()))?;
-            let mut stdout = io::stdout();
-            let mut sink = io::sink();
-            let out: &mut dyn Write = if self.emit_output {
-                &mut stdout
-            } else {
-                &mut sink
-            };
-            let renderer = TerminalRenderer::new();
-            let mut markdown_stream = MarkdownStreamState::default();
-            let mut events = Vec::new();
-            let mut pending_tool: Option<(String, String, String)> = None;
-            let mut saw_stop = false;
+        let provider_events = self
+            .provider
+            .stream_message(&provider_request)
+            .map_err(|error| RuntimeError::new(error.to_string()))?;
+        render_provider_events(provider_events, self.emit_output)
+    }
+}
 
-            while let Some(event) = stream
-                .next_event()
-                .await
-                .map_err(|error| RuntimeError::new(error.to_string()))?
-            {
-                match event {
-                    ApiStreamEvent::MessageStart(start) => {
-                        for block in start.message.content {
-                            push_output_block(block, out, &mut events, &mut pending_tool, true)?;
-                        }
+fn render_provider_events(
+    provider_events: Vec<ProviderEvent>,
+    emit_output: bool,
+) -> Result<Vec<AssistantEvent>, RuntimeError> {
+    let mut stdout = io::stdout();
+    let mut sink = io::sink();
+    let out: &mut dyn Write = if emit_output {
+        &mut stdout
+    } else {
+        &mut sink
+    };
+    let renderer = TerminalRenderer::new();
+    let mut markdown_stream = MarkdownStreamState::default();
+    let mut events = Vec::new();
+    let mut pending_tool: Option<(String, String, String)> = None;
+    let mut saw_stop = false;
+
+    for event in provider_events {
+        match event {
+            ProviderEvent::TextDelta(text) => {
+                if !text.is_empty() {
+                    if let Some(rendered) = markdown_stream.push(&renderer, &text) {
+                        write!(out, "{rendered}")
+                            .and_then(|()| out.flush())
+                            .map_err(|error| RuntimeError::new(error.to_string()))?;
                     }
-                    ApiStreamEvent::ContentBlockStart(start) => {
-                        push_output_block(
-                            start.content_block,
-                            out,
-                            &mut events,
-                            &mut pending_tool,
-                            true,
-                        )?;
-                    }
-                    ApiStreamEvent::ContentBlockDelta(delta) => match delta.delta {
-                        ContentBlockDelta::TextDelta { text } => {
-                            if !text.is_empty() {
-                                if let Some(rendered) = markdown_stream.push(&renderer, &text) {
-                                    write!(out, "{rendered}")
-                                        .and_then(|()| out.flush())
-                                        .map_err(|error| RuntimeError::new(error.to_string()))?;
-                                }
-                                events.push(AssistantEvent::TextDelta(text));
-                            }
-                        }
-                        ContentBlockDelta::InputJsonDelta { partial_json } => {
-                            if let Some((_, _, input)) = &mut pending_tool {
-                                input.push_str(&partial_json);
-                            }
-                        }
-                    },
-                    ApiStreamEvent::ContentBlockStop(_) => {
-                        if let Some(rendered) = markdown_stream.flush(&renderer) {
-                            write!(out, "{rendered}")
-                                .and_then(|()| out.flush())
-                                .map_err(|error| RuntimeError::new(error.to_string()))?;
-                        }
-                        if let Some((id, name, input)) = pending_tool.take() {
-                            // Display tool call now that input is fully accumulated
-                            writeln!(out, "\n{}", format_tool_call_start(&name, &input))
-                                .and_then(|()| out.flush())
-                                .map_err(|error| RuntimeError::new(error.to_string()))?;
-                            events.push(AssistantEvent::ToolUse { id, name, input });
-                        }
-                    }
-                    ApiStreamEvent::MessageDelta(delta) => {
-                        events.push(AssistantEvent::Usage(TokenUsage {
-                            input_tokens: delta.usage.input_tokens,
-                            output_tokens: delta.usage.output_tokens,
-                            cache_creation_input_tokens: 0,
-                            cache_read_input_tokens: 0,
-                        }));
-                    }
-                    ApiStreamEvent::MessageStop(_) => {
-                        saw_stop = true;
-                        if let Some(rendered) = markdown_stream.flush(&renderer) {
-                            write!(out, "{rendered}")
-                                .and_then(|()| out.flush())
-                                .map_err(|error| RuntimeError::new(error.to_string()))?;
-                        }
-                        events.push(AssistantEvent::MessageStop);
-                    }
+                    events.push(AssistantEvent::TextDelta(text));
                 }
             }
+            ProviderEvent::ToolUseStart { id, name } => {
+                pending_tool = Some((id, name, String::new()));
+            }
+            ProviderEvent::ToolUseInputDelta(partial_json) => {
+                if let Some((_, _, input)) = &mut pending_tool {
+                    input.push_str(&partial_json);
+                }
+            }
+            ProviderEvent::ToolUseComplete { id, name, input } => {
+                if let Some(rendered) = markdown_stream.flush(&renderer) {
+                    write!(out, "{rendered}")
+                        .and_then(|()| out.flush())
+                        .map_err(|error| RuntimeError::new(error.to_string()))?;
+                }
 
-            if !saw_stop
-                && events.iter().any(|event| {
-                    matches!(event, AssistantEvent::TextDelta(text) if !text.is_empty())
-                        || matches!(event, AssistantEvent::ToolUse { .. })
-                })
-            {
+                let (id, name, input) = match pending_tool.take() {
+                    Some((pending_id, pending_name, pending_input)) => (
+                        if id.is_empty() { pending_id } else { id },
+                        if name.is_empty() { pending_name } else { name },
+                        if input.is_empty() { pending_input } else { input },
+                    ),
+                    None => (id, name, input),
+                };
+
+                writeln!(out, "\n{}", format_tool_call_start(&name, &input))
+                    .and_then(|()| out.flush())
+                    .map_err(|error| RuntimeError::new(error.to_string()))?;
+                events.push(AssistantEvent::ToolUse { id, name, input });
+            }
+            ProviderEvent::Usage(usage) => events.push(AssistantEvent::Usage(usage)),
+            ProviderEvent::MessageStop { .. } => {
+                saw_stop = true;
+                if let Some(rendered) = markdown_stream.flush(&renderer) {
+                    write!(out, "{rendered}")
+                        .and_then(|()| out.flush())
+                        .map_err(|error| RuntimeError::new(error.to_string()))?;
+                }
                 events.push(AssistantEvent::MessageStop);
             }
-
-            if events
-                .iter()
-                .any(|event| matches!(event, AssistantEvent::MessageStop))
-            {
-                return Ok(events);
-            }
-
-            let response = self
-                .client
-                .send_message(&MessageRequest {
-                    stream: false,
-                    ..message_request.clone()
-                })
-                .await
-                .map_err(|error| RuntimeError::new(error.to_string()))?;
-            response_to_events(response, out)
-        })
+            ProviderEvent::Error(message) => return Err(RuntimeError::new(message)),
+        }
     }
+
+    if !saw_stop
+        && events.iter().any(|event| {
+            matches!(event, AssistantEvent::TextDelta(text) if !text.is_empty())
+                || matches!(event, AssistantEvent::ToolUse { .. })
+        })
+    {
+        events.push(AssistantEvent::MessageStop);
+    }
+
+    Ok(events)
 }
 
 fn final_assistant_text(summary: &runtime::TurnSummary) -> String {
@@ -3088,6 +3115,45 @@ fn tool_permission_specs() -> Vec<ToolSpec> {
     mvp_tool_specs()
 }
 
+fn convert_messages_to_provider(messages: &[ConversationMessage]) -> Vec<ProviderChatMessage> {
+    messages
+        .iter()
+        .filter_map(|message| {
+            let role = match message.role {
+                MessageRole::System => ProviderChatRole::System,
+                MessageRole::User => ProviderChatRole::User,
+                MessageRole::Assistant => ProviderChatRole::Assistant,
+                MessageRole::Tool => ProviderChatRole::Tool,
+            };
+            let content = message
+                .blocks
+                .iter()
+                .map(|block| match block {
+                    ContentBlock::Text { text } => ProviderChatContent::Text(text.clone()),
+                    ContentBlock::ToolUse { id, name, input } => ProviderChatContent::ToolUse {
+                        id: id.clone(),
+                        name: name.clone(),
+                        input: serde_json::from_str(input)
+                            .unwrap_or_else(|_| serde_json::json!({ "raw": input })),
+                    },
+                    ContentBlock::ToolResult {
+                        tool_use_id,
+                        output,
+                        is_error,
+                        ..
+                    } => ProviderChatContent::ToolResult {
+                        tool_use_id: tool_use_id.clone(),
+                        content: output.clone(),
+                        is_error: *is_error,
+                    },
+                })
+                .collect::<Vec<_>>();
+
+            (!content.is_empty()).then(|| ProviderChatMessage { role, content })
+        })
+        .collect()
+}
+
 fn convert_messages(messages: &[ConversationMessage]) -> Vec<InputMessage> {
     messages
         .iter()
@@ -3301,7 +3367,7 @@ mod tests {
             parse_args(&args).expect("args should parse"),
             CliAction::Prompt {
                 prompt: "explain this".to_string(),
-                model: "claude-opus-4-6".to_string(),
+                model: "claude-opus-4-5-20250520".to_string(),
                 output_format: CliOutputFormat::Text,
                 allowed_tools: None,
                 permission_mode: PermissionMode::DangerFullAccess,
@@ -3311,9 +3377,9 @@ mod tests {
 
     #[test]
     fn resolves_known_model_aliases() {
-        assert_eq!(resolve_model_alias("opus"), "claude-opus-4-6");
-        assert_eq!(resolve_model_alias("sonnet"), "claude-sonnet-4-6");
-        assert_eq!(resolve_model_alias("haiku"), "claude-haiku-4-5-20251213");
+        assert_eq!(resolve_model_alias("opus"), "claude-opus-4-5-20250520");
+        assert_eq!(resolve_model_alias("sonnet"), "claude-sonnet-4-20250514");
+        assert_eq!(resolve_model_alias("haiku"), "claude-haiku-4-5-20251001");
         assert_eq!(resolve_model_alias("claude-opus"), "claude-opus");
     }
 
@@ -3832,7 +3898,7 @@ mod tests {
             MessageResponse {
                 id: "msg-1".to_string(),
                 kind: "message".to_string(),
-                model: "claude-opus-4-6".to_string(),
+                model: "claude-opus-4-5-20250520".to_string(),
                 role: "assistant".to_string(),
                 content: vec![OutputContentBlock::ToolUse {
                     id: "tool-1".to_string(),
@@ -3867,7 +3933,7 @@ mod tests {
             MessageResponse {
                 id: "msg-2".to_string(),
                 kind: "message".to_string(),
-                model: "claude-opus-4-6".to_string(),
+                model: "claude-opus-4-5-20250520".to_string(),
                 role: "assistant".to_string(),
                 content: vec![OutputContentBlock::ToolUse {
                     id: "tool-2".to_string(),

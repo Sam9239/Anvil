@@ -282,10 +282,10 @@ Reference coverage:
 
 Remaining gaps:
 
-- wire providers into CLI (replace `AnthropicRuntimeClient`)
-- implement provider/model selection via CLI flag and config
+- add config-backed provider defaults and first-run provider setup
 - implement thinking block handling
 - add retry logic to OpenAI and Gemini adapters
+- extend provider-aware pricing into every CLI reporting surface
 
 Status: **strong** - Provider trait defined, 4 adapters implemented, model registry complete (2026-04-02)
 
@@ -384,7 +384,7 @@ Status: **basic** - needs expansion for good project awareness
 ### Priority order for closing gaps:
 
 1. ~~Provider abstraction (unblocks multi-LLM)~~ — **closed 2026-04-02**
-2. CLI provider integration (wire adapters into runtime)
+2. Streaming query engine and thinking-state parity
 3. Streaming engine (unblocks reliability)
 4. Complete existing tools (highest user impact)
 5. Permission upgrade (unblocks auto mode)

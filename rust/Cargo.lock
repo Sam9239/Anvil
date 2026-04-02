@@ -25,6 +25,7 @@ dependencies = [
  "commands",
  "compat-harness",
  "crossterm",
+ "providers",
  "pulldown-cmark",
  "runtime",
  "rustyline",

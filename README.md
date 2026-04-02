@@ -2,7 +2,7 @@
 
 Anvil is a terminal-first coding agent and automation CLI for software engineering work. It is built around a Rust engine that owns conversation state, tool execution, permissions, session memory, configuration, and workflow orchestration. Anvil connects to LLM providers through a provider adapter interface, making it model-agnostic by design.
 
-Anvil is meant to ship as its own product: a local CLI coding agent you install and run in your terminal, similar in spirit to Claude Code but built from the ground up in Rust with multi-provider support.
+Anvil is meant to ship as its own product: a local CLI coding agent you install and run in your terminal, built from the ground up in Rust with multi-provider support and safe, tool-aware automation.
 
 ## Table of Contents
 
@@ -736,11 +736,12 @@ rust/
 
 ### Current State (as of 2026-04-02)
 
-Anvil has a stable Rust foundation with a working local agent core and a multi-provider abstraction layer. It is **not yet deployment-ready** but is actively progressing toward its first public release.
+Anvil has a stable Rust foundation with a working local agent core, a multi-provider abstraction layer, and a live provider-backed CLI/runtime path. It is **not yet deployment-ready** but is actively progressing toward its first public release.
 
 **What works:**
 - Interactive REPL and one-shot prompt mode
 - Multi-provider support: Anthropic, OpenAI, Google Gemini, xAI Grok (4 providers, 13 models)
+- Live CLI/runtime provider routing with `--model provider:model` support
 - Provider trait abstraction with unified event stream
 - Model registry with pricing, capabilities, and tier metadata
 - 18 built-in tools (core file/shell/search tools are production quality)

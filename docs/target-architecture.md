@@ -108,9 +108,9 @@ Responsibilities:
 
 Current state:
 
-- not yet separated as its own layer
-- Anthropic support exists inside the current API/runtime path
-- shipping requires extracting a provider abstraction and adding more adapters
+- provider abstraction exists as its own `providers` crate
+- CLI/runtime dispatch now flows through provider adapters instead of an Anthropic-only runtime client
+- remaining work is around config-driven provider defaults, richer retries, and shipping polish
 
 Target home:
 
